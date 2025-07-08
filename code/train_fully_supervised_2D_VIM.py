@@ -102,7 +102,7 @@ def train(args, snapshot_path):
     batch_size = args.batch_size
     max_iterations = args.max_iterations
 
-    labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
+    # labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
 
     # model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes)
 
