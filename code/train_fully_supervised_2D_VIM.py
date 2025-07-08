@@ -25,7 +25,7 @@ from networks.vision_mamba import MambaUnet as VIM_seg
 from config import get_config
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
@@ -116,10 +116,37 @@ def train(args, snapshot_path):
 
 
 
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGenerator(args.patch_size)
-    ]))
-    db_val = BaseDataSets(base_dir=args.root_path, split="val")
+    # db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
+    #     RandomGenerator(args.patch_size)
+    # ]))
+    # db_val = BaseDataSets(base_dir=args.root_path, split="val")
+
+    csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
+    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"],
+    mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files",
+
+    db_train = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="train",
+        val_ratio=0.2,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=True
+    )
+
+    db_val = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="val",
+        val_ratio=0.2,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=False
+    )
+
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
