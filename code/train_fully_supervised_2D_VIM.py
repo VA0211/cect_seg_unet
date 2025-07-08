@@ -122,8 +122,8 @@ def train(args, snapshot_path):
     # db_val = BaseDataSets(base_dir=args.root_path, split="val")
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
-    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"],
-    mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files",
+    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
+    mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     db_train = LiverTumorSliceDataset(
         metadata_csv=csv_data,
