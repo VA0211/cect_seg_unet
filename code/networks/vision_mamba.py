@@ -16,6 +16,9 @@ import numpy as np
 from torch.nn import CrossEntropyLoss, Dropout, Softmax, Linear, Conv2d, LayerNorm
 from torch.nn.modules.utils import _pair
 from scipy import ndimage
+from yacs.config import CfgNode
+import torch.serialization
+torch.serialization.add_safe_globals([CfgNode])
 from .mamba_sys import VSSM
 
 logger = logging.getLogger(__name__)
@@ -50,7 +53,7 @@ class MambaUnet(nn.Module):
         if pretrained_path is not None:
             print("pretrained_path:{}".format(pretrained_path))
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            pretrained_dict = torch.load(pretrained_path, map_location=device)
+            pretrained_dict = torch.load(pretrained_path, map_location=device, )
             if "model"  not in pretrained_dict:
                 print("---start load pretrained modle by splitting---")
                 pretrained_dict = {k[17:]:v for k,v in pretrained_dict.items()}
