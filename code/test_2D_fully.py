@@ -28,15 +28,65 @@ parser.add_argument('--labeled_num', type=int, default=3,
                     help='labeled data')
 
 
-def calculate_metric_percase(pred, gt):
-    pred[pred > 0] = 1
-    gt[gt > 0] = 1
-    dice = metric.binary.dc(pred, gt)
-    # asd = metric.binary.asd(pred, gt)
-    # hd95 = metric.binary.hd95(pred, gt)
-    return dice
-    # , hd95
-    # , asd
+def calculate_metric_percase(pred, gt, num_classes=2):
+    """
+    pred, gt: numpy arrays of shape [H, W] or [D, H, W]
+    num_classes: int, total number of classes including background
+    """
+    metrics = {
+        "dice": [],
+        "hd95": [],
+        "iou": [],
+        "acc": [],
+        "prec": [],
+        "sens": [],
+        "spec": [],
+    }
+
+    for c in range(1, num_classes):  # skip background class 0
+        pred_c = (pred == c).astype(np.uint8)
+        gt_c = (gt == c).astype(np.uint8)
+
+        if pred_c.sum() == 0 and gt_c.sum() == 0:
+            metrics["dice"].append(1.0)
+            metrics["hd95"].append(0.0)
+            metrics["iou"].append(1.0)
+            metrics["acc"].append(1.0)
+            metrics["prec"].append(1.0)
+            metrics["sens"].append(1.0)
+            metrics["spec"].append(1.0)
+            continue
+        if pred_c.sum() == 0 or gt_c.sum() == 0:
+            metrics["dice"].append(0.0)
+            metrics["hd95"].append(999.0)
+            metrics["iou"].append(0.0)
+            metrics["acc"].append(0.0)
+            metrics["prec"].append(0.0)
+            metrics["sens"].append(0.0)
+            metrics["spec"].append(0.0)
+            continue
+
+        try:
+            dice = metric.binary.dc(pred_c, gt_c)
+            hd95 = metric.binary.hd95(pred_c, gt_c)
+            iou = metric.binary.jc(pred_c, gt_c)
+            acc = (pred_c == gt_c).sum() / pred_c.size
+            prec = metric.binary.precision(pred_c, gt_c)
+            sens = metric.binary.sensitivity(pred_c, gt_c)
+            spec = metric.binary.specificity(pred_c, gt_c)
+        except:
+            dice, hd95, iou, acc, prec, sens, spec = [0.0] * 7
+
+        metrics["dice"].append(dice)
+        metrics["hd95"].append(hd95)
+        metrics["iou"].append(iou)
+        metrics["acc"].append(acc)
+        metrics["prec"].append(prec)
+        metrics["sens"].append(sens)
+        metrics["spec"].append(spec)
+
+    # Return per-metric mean across all foreground classes
+    return np.array([np.mean(metrics[k]) for k in metrics])
 
 
 # def test_single_volume(case, net, test_save_path, FLAGS):
@@ -81,19 +131,27 @@ def calculate_metric_percase(pred, gt):
 #     sitk.WriteImage(lab_itk, test_save_path + case + "_gt.nii.gz")
 #     return first_metric, second_metric, third_metric
 
-def test_single_volume(image, label, net, classes=2, patch_size=(256, 256)):
-    net.eval()
-    x, y = image.shape
-    slice_resized = zoom(image, (patch_size[0] / x, patch_size[1] / y), order=0)
-    input_tensor = torch.from_numpy(slice_resized).unsqueeze(0).unsqueeze(0).float().cuda()
+def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
+    image = image.squeeze(0).cpu().numpy()
+    label = label.squeeze(0).cpu().numpy()
 
-    with torch.no_grad():
-        output = net(input_tensor)
-        pred = torch.argmax(torch.softmax(output, dim=1), dim=1).squeeze(0).cpu().numpy()
-        pred = zoom(pred, (x / patch_size[0], y / patch_size[1]), order=0)
+    prediction = np.zeros_like(label)
 
-    metric = calculate_metric_percase(pred == 1, label == 1)
-    return metric
+    for ind in range(image.shape[0]):
+        slice = image[ind]
+        x, y = slice.shape
+        slice_resized = zoom(slice, (patch_size[0] / x, patch_size[1] / y), order=0)
+        input_tensor = torch.from_numpy(slice_resized).unsqueeze(0).unsqueeze(0).float().cuda()
+
+        net.eval()
+        with torch.no_grad():
+            out = net(input_tensor)
+            pred = torch.argmax(torch.softmax(out, dim=1), dim=1).squeeze(0).cpu().numpy()
+            pred = zoom(pred, (x / patch_size[0], y / patch_size[1]), order=0)
+            prediction[ind] = pred
+
+    return calculate_metric_percase(prediction, label, num_classes=classes)
+
 
 def Inference(FLAGS):
     with open(FLAGS.root_path + '/test.list', 'r') as f:

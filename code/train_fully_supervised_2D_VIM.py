@@ -212,14 +212,22 @@ def train(args, snapshot_path):
 
             if iter_num > 0 and iter_num % 200 == 0:
                 model.eval()
-                metric_list = 0.0
+                metric_list = []
                 for i_batch, sampled_batch in enumerate(valloader):
                     # metric_i = test_single_volume(
                     #     sampled_batch["image"], sampled_batch["label"], model, classes=num_classes, patch_size=args.patch_size)
-                    metric_i = test_single_volume(sampled_batch["image"][0, 0].cpu().numpy(),
-                                                  sampled_batch["label"][0].cpu().numpy(),
-                                                  model, classes=num_classes, patch_size=args.patch_size)
-                    metric_list += np.array(metric_i)
+                    # metric_i = test_single_volume(sampled_batch["image"][0, 0].cpu().numpy(),
+                    #                               sampled_batch["label"][0].cpu().numpy(),
+                    #                               model, classes=num_classes, patch_size=args.patch_size)
+                    # metric_list += np.array(metric_i)
+                    metric_i = test_single_volume(
+                        sampled_batch["image"],
+                        sampled_batch["label"],
+                        model,
+                        classes=num_classes,
+                        patch_size=args.patch_size
+                    )
+                    metric_list.append(metric_i)
                 # metric_list = metric_list / len(db_val)
                 # for class_i in range(num_classes-1):
                 #     writer.add_scalar('info/val_{}_dice'.format(class_i+1),
@@ -233,26 +241,14 @@ def train(args, snapshot_path):
                 # writer.add_scalar('info/val_mean_dice', performance, iter_num)
                 # writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
 
-                metric_list = metric_list / len(db_val)
+                metric_list = np.array(metric_list)
+                mean_metrics = np.mean(metric_list, axis=0)
 
-                if metric_list.ndim == 2:
-                    # Multi-class (e.g., shape [N_classes, 2])
-                    for class_i in range(metric_list.shape[0]):
-                        writer.add_scalar(f'info/val_class{class_i+1}_dice', metric_list[class_i, 0], iter_num)
-                        writer.add_scalar(f'info/val_class{class_i+1}_hd95', metric_list[class_i, 1], iter_num)
+                metric_names = ["dice", "hd95", "iou", "acc", "prec", "sens", "spec"]
+                for i, name in enumerate(metric_names):
+                    writer.add_scalar(f'info/val_{name}', mean_metrics[i], iter_num)
 
-                    performance = np.mean(metric_list[:, 0])
-                    mean_hd95 = np.mean(metric_list[:, 1])
-                    writer.add_scalar('info/val_mean_dice', performance, iter_num)
-                    writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
-
-                else:
-                    # Binary (e.g., shape [2,])
-                    writer.add_scalar('info/val_dice', metric_list[0], iter_num)
-                    writer.add_scalar('info/val_hd95', metric_list[1], iter_num)
-
-                    performance = metric_list[0]
-                    mean_hd95 = metric_list[1]
+                performance = mean_metrics[0]  # Dice
 
                 if performance > best_performance:
                     best_performance = performance
