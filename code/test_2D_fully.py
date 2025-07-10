@@ -2,7 +2,6 @@ import argparse
 import os
 import shutil
 import pandas as pd
-
 import h5py
 import nibabel as nib
 import numpy as np
@@ -10,12 +9,10 @@ import SimpleITK as sitk
 import torch
 from medpy import metric
 from scipy.ndimage import zoom
-from scipy.ndimage.interpolation import zoom
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
-# from networks.efficientunet import UNet
 from networks.net_factory import net_factory
-
 from dataloaders.dataset import LiverTumorSliceDataset
 from torch.utils.data import DataLoader
 
@@ -31,6 +28,18 @@ parser.add_argument('--num_classes', type=int,  default=4,
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
 
+def save_liver_and_tumor_masks(image, tumor_mask=None, alpha=0.4, pred_tumor_mask=None, beta=0.5, save_path=None):
+    plt.figure(figsize=(6, 6))
+    plt.imshow(image, cmap='gray')
+    if tumor_mask is not None:
+        plt.imshow(tumor_mask, cmap='Reds', alpha=alpha)
+    if pred_tumor_mask is not None:
+        plt.imshow(pred_tumor_mask, cmap='Blues', alpha=beta)
+    # plt.title("CT Slice with Tumor Mask")
+    plt.axis('off')
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
 
 def calculate_metric_percase(pred, gt, num_classes=2):
     """
@@ -149,7 +158,7 @@ def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
         pred = torch.argmax(torch.softmax(out, dim=1), dim=1).squeeze(0).cpu().numpy()
         pred = zoom(pred, (x / patch_size[0], y / patch_size[1]), order=0)
 
-    return calculate_metric_percase(pred, label, num_classes=classes)
+    return pred, calculate_metric_percase(pred, label, num_classes=classes)
 
 # def Inference(FLAGS):
 #     with open(FLAGS.root_path + '/test.list', 'r') as f:
@@ -208,7 +217,7 @@ def Inference(FLAGS):
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
     snapshot_path = f"{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
-    test_save_path = f"{snapshot_path}_predictions/"
+    test_save_path = f"{snapshot_path}_predictions_plot/"
     os.makedirs(test_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
@@ -225,10 +234,15 @@ def Inference(FLAGS):
     for i, batch in enumerate(tqdm(test_loader)):
         image = batch["image"]
         label = batch["label"]
-        metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[256, 256])
+        pred, metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[256, 256])
         all_metrics.append(metric_i)
 
-    # Convert to DataFrame
+        # Plot and save the result
+        img_np = image.squeeze().cpu().numpy()
+        label_np = label.squeeze().cpu().numpy()
+        save_file = os.path.join(test_save_path, f"pred_test_{i}.png")
+        save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
+
     df = pd.DataFrame(all_metrics, columns=metric_names)
     # df.insert(0, "Case", [f"sample_{i}" for i in range(len(df))])  # case ID
 
