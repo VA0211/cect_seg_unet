@@ -221,7 +221,10 @@ def Inference(FLAGS):
     all_metrics = []
     metric_names = ["Dice", "HD95", "IoU", "Accuracy", "Precision", "Sensitivity", "Specificity"]
 
-    for i, (image, label) in enumerate(tqdm(test_loader)):
+    # for i, (image, label) in enumerate(tqdm(test_loader)):
+    for i, batch in enumerate(tqdm(test_loader)):
+        image = batch["image"]
+        label = batch["label"]
         metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[256, 256])
         all_metrics.append(metric_i)
 
