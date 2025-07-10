@@ -27,8 +27,8 @@ parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
-parser.add_argument('--model_weight_path', type=str,
-                    default='', help='model_weight_path')
+# parser.add_argument('--model_weight_path', type=str,
+#                     default='', help='model_weight_path')
 
 def save_liver_and_tumor_masks(image, tumor_mask=None, alpha=0.4, pred_tumor_mask=None, beta=0.5, save_path=None):
     plt.figure(figsize=(6, 6))
@@ -223,10 +223,11 @@ def Inference(FLAGS):
     os.makedirs(test_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
-    if FLAGS.model_weight_path == '':
-        save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
-    else:
-        save_mode_path = FLAGS.model_weight_path
+    # if FLAGS.model_weight_path == '':
+    #     save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
+    # else:
+    #     save_mode_path = FLAGS.model_weight_path
+    save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
     print(save_mode_path)
     net.load_state_dict(torch.load(save_mode_path))
     net.eval()
