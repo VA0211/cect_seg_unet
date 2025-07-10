@@ -4,6 +4,7 @@ from networks.pnet import PNet2D
 from networks.unet import UNet, UNet_DS, UNet_URPC, UNet_CCT
 import argparse
 from networks.vision_transformer import SwinUnet as ViT_seg
+from networks.vision_mamba import MambaUnet as VIM_seg
 from networks.config import get_config
 from networks.nnunet import initialize_network
 
@@ -93,6 +94,9 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
         net = PNet2D(in_chns, class_num, 64, [1, 2, 4, 8, 16]).cuda()
     elif net_type == "nnUNet":
         net = initialize_network(num_classes=class_num).cuda()
+    elif net_type == "mambaunet":
+        net = VIM_seg(config, img_size=args.patch_size,
+                      num_classes=args.num_classes).cuda()
     else:
         net = None
     return net
