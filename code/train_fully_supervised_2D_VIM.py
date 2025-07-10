@@ -266,6 +266,8 @@ def train(args, snapshot_path):
                     writer.add_scalar(f'info/val_{name}', mean_metrics[i], iter_num)
 
                 performance = mean_metrics[0]  # Dice
+                mean_hd95 = mean_metrics[1]
+                mean_iou = mean_metrics[2]
 
                 if performance > best_performance:
                     best_performance = performance
@@ -278,7 +280,7 @@ def train(args, snapshot_path):
                     torch.save(model.state_dict(), save_best)
 
                 logging.info(
-                    'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
+                    'iteration %d : mean_dice : %f mean_hd95 : %f mean_iou : %f' % (iter_num, performance, mean_hd95, mean_iou))
                 model.train()
 
             if iter_num % 3000 == 0:
