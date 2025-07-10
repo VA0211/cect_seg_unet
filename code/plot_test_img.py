@@ -1,88 +1,86 @@
 import argparse
 import os
-import torch
-import numpy as np
 import nibabel as nib
+import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from scipy.ndimage import zoom
-from networks.net_factory import net_factory
+
+from networks.net_factory import net_factory  # Make sure this returns your model
 
 
-def normalize_and_resize(image_slice, target_size=(256, 256)):
-    image_slice = (image_slice - np.mean(image_slice)) / (np.std(image_slice) + 1e-8)
-    h, w = image_slice.shape
-    image_resized = zoom(image_slice, (target_size[0] / h, target_size[1] / w), order=1)
-    return image_resized, (h, w)
+def load_nifti_slice(path, slice_idx, output_size=(256, 256)):
+    nii = nib.load(path)
+    data = nii.get_fdata()
+    if data.ndim == 4:
+        data = data[:, :, :, 0]
+    slice_img = data[:, :, slice_idx]
+    slice_img = (slice_img - np.mean(slice_img)) / (np.std(slice_img) + 1e-8)
+    resized = zoom(slice_img, (output_size[0] / slice_img.shape[0], output_size[1] / slice_img.shape[1]), order=1)
+    return resized
 
 
-def restore_size(prediction, original_size):
-    return zoom(prediction, (original_size[0] / prediction.shape[0], original_size[1] / prediction.shape[1]), order=0)
-
-
-def plot_prediction(image, prediction, label=None):
+def plot_prediction(ct_tensor, pred_tensor, mask_tensor=None):
     plt.figure(figsize=(12, 4))
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(image, cmap="gray")
-    plt.title("Input Image")
-    plt.axis("off")
+    plt.subplot(1, 3 if mask_tensor is not None else 2, 1)
+    plt.title("CT Slice")
+    plt.imshow(ct_tensor.squeeze(0), cmap='gray')
+    plt.axis('off')
 
-    if label is not None:
+    if mask_tensor is not None:
         plt.subplot(1, 3, 2)
-        plt.imshow(label, cmap="gray")
         plt.title("Ground Truth")
-        plt.axis("off")
+        plt.imshow(mask_tensor.squeeze(0), cmap='gray')
+        plt.axis('off')
 
-    plt.subplot(1, 3, 3)
-    plt.imshow(prediction, cmap="gray")
-    plt.title("Prediction")
-    plt.axis("off")
+        plt.subplot(1, 3, 3)
+        plt.title("Prediction")
+    else:
+        plt.subplot(1, 2, 2)
+        plt.title("Prediction")
+
+    plt.imshow(pred_tensor.squeeze(0), cmap='jet', alpha=0.5)
+    plt.axis('off')
 
     plt.tight_layout()
     plt.show()
 
 
-def run_inference_on_slice(ct_path, mask_path, slice_index, model_path, net_type="unet", num_classes=2):
-    net = net_factory(net_type=net_type, in_chns=1, class_num=num_classes)
-    net.load_state_dict(torch.load(model_path, map_location="cpu"))
-    net.eval()
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--ct_path', type=str, required=True, help="Path to CT .nii or .nii.gz file")
+    parser.add_argument('--mask_path', type=str, default=None, help="Optional: Path to mask .nii file")
+    parser.add_argument('--slice_index', type=int, required=True, help="Slice index to visualize")
+    parser.add_argument('--model_path', type=str, required=True, help="Path to .pth model checkpoint")
+    parser.add_argument('--net_type', type=str, default='unet', help="Model type used in net_factory")
+    parser.add_argument('--num_classes', type=int, default=2, help="Number of output classes")
+    args, unknown = parser.parse_known_args()  # <-- this fixes unrecognized arg crash
 
-    ct = nib.load(ct_path).get_fdata()
-    ct_slice = ct[:, :, slice_index]
-    image_resized, original_size = normalize_and_resize(ct_slice)
+    # Load image slice
+    ct_slice = load_nifti_slice(args.ct_path, args.slice_index)  # (256, 256)
+    ct_tensor = torch.tensor(ct_slice, dtype=torch.float32).unsqueeze(0).unsqueeze(0).cuda()  # [1, 1, H, W]
 
-    input_tensor = torch.from_numpy(image_resized).unsqueeze(0).unsqueeze(0).float()
+    # Load mask if available
+    mask_tensor = None
+    if args.mask_path:
+        mask_slice = load_nifti_slice(args.mask_path, args.slice_index)
+        mask_tensor = torch.tensor(mask_slice, dtype=torch.uint8).unsqueeze(0)
 
+    # Load model
+    model = net_factory(net_type=args.net_type, in_chns=1, class_num=args.num_classes)
+    model.load_state_dict(torch.load(args.model_path))
+    model = model.cuda()
+    model.eval()
+
+    # Run prediction
     with torch.no_grad():
-        output = net(input_tensor)
-        prediction = torch.argmax(torch.softmax(output, dim=1), dim=1).squeeze(0).numpy()
+        output = model(ct_tensor)
+        pred = torch.argmax(torch.softmax(output, dim=1), dim=1).squeeze(0).cpu()
 
-    prediction_resized = restore_size(prediction, original_size)
-
-    # Load and process ground truth if provided
-    label_slice = None
-    if mask_path and os.path.exists(mask_path):
-        mask = nib.load(mask_path).get_fdata()
-        label_slice = mask[:, :, slice_index]
-
-    plot_prediction(ct_slice, prediction_resized, label_slice)
+    # Plot result
+    plot_prediction(ct_tensor.cpu().squeeze(), pred, mask_tensor)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--ct_path', type=str, required=True, help='Path to the CT .nii.gz file')
-    parser.add_argument('--mask_path', type=str, default=None, help='Path to the mask .nii.gz file (optional)')
-    parser.add_argument('--slice_index', type=int, default=50, help='Slice index to visualize')
-    parser.add_argument('--model_path', type=str, required=True, help='Path to the trained .pth model')
-    parser.add_argument('--net_type', type=str, default='unet', help='Model type, e.g., unet, mambaunet, etc.')
-    parser.add_argument('--num_classes', type=int, default=2, help='Number of output classes')
-    args = parser.parse_args()
-
-    run_inference_on_slice(
-        ct_path=args.ct_path,
-        mask_path=args.mask_path,
-        slice_index=args.slice_index,
-        model_path=args.model_path,
-        net_type=args.net_type,
-        num_classes=args.num_classes
-    )
+    main()
