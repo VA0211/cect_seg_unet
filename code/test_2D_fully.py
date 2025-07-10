@@ -207,7 +207,7 @@ def Inference(FLAGS):
 
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
-    snapshot_path = f"../model/{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
+    snapshot_path = f"{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
     test_save_path = f"{snapshot_path}_predictions/"
     os.makedirs(test_save_path, exist_ok=True)
 
