@@ -125,23 +125,40 @@ def train(args, snapshot_path):
     cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
+    # Train set
     db_train = LiverTumorSliceDataset(
         metadata_csv=csv_data,
         cect_root_dirs=cect_root_dirs,
         mask_dir=mask_dir,
         split="train",
         val_ratio=0.2,
+        test_ratio=0.1,
         random_seed=42,
         output_size=(256, 256),
         augment=True
     )
 
+    # Validation set
     db_val = LiverTumorSliceDataset(
         metadata_csv=csv_data,
         cect_root_dirs=cect_root_dirs,
         mask_dir=mask_dir,
         split="val",
         val_ratio=0.2,
+        test_ratio=0.1,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=False
+    )
+
+    # Test set
+    db_test = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="test",
+        val_ratio=0.2,
+        test_ratio=0.1,
         random_seed=42,
         output_size=(256, 256),
         augment=False

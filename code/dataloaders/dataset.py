@@ -27,8 +27,9 @@ class LiverTumorSliceDataset(Dataset):
                  metadata_csv,        
                  cect_root_dirs,       
                  mask_dir,
-                 split="train",             # "train" or "val"
-                 val_ratio=0.2,             # % of data to use for validation
+                 split="train",             # "train", "val", or "test"
+                 val_ratio=0.2,             # % for validation
+                 test_ratio=0.1,            # % for testing
                  random_seed=42,            # reproducible split
                  output_size=(256, 256),    # target resize
                  augment=True):
@@ -47,16 +48,29 @@ class LiverTumorSliceDataset(Dataset):
         # Gather all valid slices
         all_slices = self._collect_slices()
 
-        # Deterministic split
-        train_slices, val_slices = train_test_split(
+        train_val_slices, test_slices = train_test_split(
             all_slices,
-            test_size=val_ratio,
+            test_size=test_ratio,
+            random_state=random_seed,
+            shuffle=True
+        )
+        train_slices, val_slices = train_test_split(
+            train_val_slices,
+            test_size=val_ratio / (1.0 - test_ratio),  # correct val ratio inside train+val
             random_state=random_seed,
             shuffle=True
         )
 
-        self.slice_infos = train_slices if self.split == "train" else val_slices
-        print(f"[{self.split}] Total {len(self.slice_infos)} slices")
+        if self.split == "train":
+            self.slice_infos = train_slices
+        elif self.split == "val":
+            self.slice_infos = val_slices
+        elif self.split == "test":
+            self.slice_infos = test_slices
+        else:
+            raise ValueError(f"Unknown split: {self.split}")
+
+        print(f"[{self.split.upper()}] Total {len(self.slice_infos)} slices")
 
     def _collect_slices(self):
         slice_info_list = []
