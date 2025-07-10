@@ -171,6 +171,12 @@ _C.THROUGHPUT_MODE = False
 # local rank for DistributedDataParallel, given by command line argument
 _C.LOCAL_RANK = 0
 
+# -----------------------------------------------------------------------------
+# Mamba UNet cfg
+# -----------------------------------------------------------------------------
+_C.MODEL.VSSM.EMBED_DIM = 96
+_C.MODEL.VSSM.DEPTHS = [ 2, 2, 2, 2 ]
+
 
 def _update_config_from_file(config, cfg_file):
     config.defrost()
