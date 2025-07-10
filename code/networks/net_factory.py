@@ -95,6 +95,8 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
     elif net_type == "nnUNet":
         net = initialize_network(num_classes=class_num).cuda()
     elif net_type == "mambaunet":
+        args.cfg = "../code/configs/vmamba_tiny.yaml"
+        config = get_config(args)
         net = VIM_seg(config, img_size=args.patch_size,
                       num_classes=args.num_classes).cuda()
     else:
