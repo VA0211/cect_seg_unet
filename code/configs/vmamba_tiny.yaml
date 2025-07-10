@@ -6,3 +6,5 @@ MODEL:
   VSSM:
     EMBED_DIM: 96
     DEPTHS: [ 2, 2, 2, 2 ]
+    PATCH_SIZE: 4
+    IN_CHANS: 3

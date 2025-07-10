@@ -177,6 +177,8 @@ _C.LOCAL_RANK = 0
 _C.MODEL.VSSM = CN()
 _C.MODEL.VSSM.EMBED_DIM = 96
 _C.MODEL.VSSM.DEPTHS = [ 2, 2, 2, 2 ]
+_C.MODEL.VSSM.PATCH_SIZE = 4
+_C.MODEL.VSSM.IN_CHANS = 3
 
 
 def _update_config_from_file(config, cfg_file):
