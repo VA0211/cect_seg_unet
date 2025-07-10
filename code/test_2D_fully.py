@@ -28,7 +28,7 @@ parser.add_argument('--model', type=str,
                     default='unet', help='model_name')
 parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
-parser.add_argument('--labeled_num', type=int, default=3,
+parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
 
 
@@ -213,6 +213,7 @@ def Inference(FLAGS):
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
     save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
+    print(save_mode_path)
     net.load_state_dict(torch.load(save_mode_path))
     net.eval()
     print(f"Model loaded from: {save_mode_path}")
