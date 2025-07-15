@@ -212,7 +212,7 @@ def Inference(FLAGS):
         val_ratio=0.2,
         test_ratio=0.1,
         random_seed=42,
-        output_size=(256, 256),
+        output_size=(224, 224),
         augment=False
     )
 
