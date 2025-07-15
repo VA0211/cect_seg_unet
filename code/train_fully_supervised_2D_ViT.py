@@ -32,7 +32,7 @@ from scipy.ndimage import zoom
 from scipy.ndimage.interpolation import zoom
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset
 from networks.net_factory import net_factory
 from networks.vision_transformer import SwinUnet as ViT_seg
 # from networks.vision_mamba import MambaUnet as VIM
@@ -118,7 +118,7 @@ def train(args, snapshot_path):
     batch_size = args.batch_size
     max_iterations = args.max_iterations
 
-    labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
+    # labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
 
 
     model = ViT_seg(config, img_size=args.patch_size,
@@ -126,10 +126,54 @@ def train(args, snapshot_path):
     model.load_from(config)
     
     # model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes)
-    db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
-        RandomGenerator(args.patch_size)
-    ]))
-    db_val = BaseDataSets(base_dir=args.root_path, split="val")
+    # db_train = BaseDataSets(base_dir=args.root_path, split="train", num=labeled_slice, transform=transforms.Compose([
+    #     RandomGenerator(args.patch_size)
+    # ]))
+    # db_val = BaseDataSets(base_dir=args.root_path, split="val")
+
+    csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
+    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
+    mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
+
+    # Train set
+    db_train = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="train",
+        val_ratio=0.2,
+        test_ratio=0.1,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=True
+    )
+
+    # Validation set
+    db_val = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="val",
+        val_ratio=0.2,
+        test_ratio=0.1,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=False
+    )
+
+    # Test set
+    db_test = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="test",
+        val_ratio=0.2,
+        test_ratio=0.1,
+        random_seed=42,
+        output_size=(256, 256),
+        augment=False
+    )
+
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
@@ -197,23 +241,44 @@ def train(args, snapshot_path):
 
             if iter_num > 0 and iter_num % 200 == 0:
                 model.eval()
-                metric_list = 0.0
+                metric_list = []
                 for i_batch, sampled_batch in enumerate(valloader):
+                    # metric_i = test_single_volume(
+                    #     sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
+                    # metric_list += np.array(metric_i)
+
                     metric_i = test_single_volume(
-                        sampled_batch["image"], sampled_batch["label"], model, classes=num_classes)
-                    metric_list += np.array(metric_i)
-                metric_list = metric_list / len(db_val)
-                for class_i in range(num_classes-1):
-                    writer.add_scalar('info/val_{}_dice'.format(class_i+1),
-                                      metric_list[class_i, 0], iter_num)
-                    writer.add_scalar('info/val_{}_hd95'.format(class_i+1),
-                                      metric_list[class_i, 1], iter_num)
+                        sampled_batch["image"],
+                        sampled_batch["label"],
+                        model,
+                        classes=num_classes,
+                        patch_size=args.patch_size
+                    )
+                    metric_list.append(metric_i)
 
-                performance = np.mean(metric_list, axis=0)[0]
+                # metric_list = metric_list / len(db_val)
+                # for class_i in range(num_classes-1):
+                #     writer.add_scalar('info/val_{}_dice'.format(class_i+1),
+                #                       metric_list[class_i, 0], iter_num)
+                #     writer.add_scalar('info/val_{}_hd95'.format(class_i+1),
+                #                       metric_list[class_i, 1], iter_num)
 
-                mean_hd95 = np.mean(metric_list, axis=0)[1]
-                writer.add_scalar('info/val_mean_dice', performance, iter_num)
-                writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
+                # performance = np.mean(metric_list, axis=0)[0]
+
+                # mean_hd95 = np.mean(metric_list, axis=0)[1]
+                # writer.add_scalar('info/val_mean_dice', performance, iter_num)
+                # writer.add_scalar('info/val_mean_hd95', mean_hd95, iter_num)
+
+                metric_list = np.array(metric_list)
+                mean_metrics = np.mean(metric_list, axis=0)
+
+                metric_names = ["dice", "hd95", "iou", "acc", "prec", "sens", "spec"]
+                for i, name in enumerate(metric_names):
+                    writer.add_scalar(f'info/val_{name}', mean_metrics[i], iter_num)
+
+                performance = mean_metrics[0]  # Dice
+                mean_hd95 = mean_metrics[1]
+                mean_iou = mean_metrics[2]
 
                 if performance > best_performance:
                     best_performance = performance
@@ -226,7 +291,7 @@ def train(args, snapshot_path):
                     torch.save(model.state_dict(), save_best)
 
                 logging.info(
-                    'iteration %d : mean_dice : %f mean_hd95 : %f' % (iter_num, performance, mean_hd95))
+                    'iteration %d : mean_dice : %f mean_hd95 : %f mean_iou : %f' % (iter_num, performance, mean_hd95, mean_iou))
                 model.train()
 
             if iter_num % 3000 == 0:
@@ -257,7 +322,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    snapshot_path = "../model/{}_{}_labeled/{}".format(
+    snapshot_path = "../model/{}_{}/{}".format(
         args.exp, args.labeled_num, args.model)
     if not os.path.exists(snapshot_path):
         os.makedirs(snapshot_path)
