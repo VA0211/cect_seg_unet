@@ -88,6 +88,8 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
         net = Effi_UNet('efficientnet-b3', encoder_weights='imagenet',
                         in_channels=in_chns, classes=class_num).cuda()
     elif net_type == "swinunet":
+        args.cfg = "../code/configs/swin_tiny_patch4_window7_224_lite.yaml"
+        config = get_config(args)
         net = ViT_seg(config, img_size=args.patch_size,
                       num_classes=args.num_classes).cuda()
     elif net_type == "pnet":
