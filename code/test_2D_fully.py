@@ -204,6 +204,11 @@ def Inference(FLAGS):
     cect_root_dirs = ["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
     mask_dir = "/kaggle/input/cect-liver-2/mask_files/mask_files"
 
+    # unet, mamabunet
+    # img_szie = 256
+    # swimunet
+    img_size = 224
+
     db_test = LiverTumorSliceDataset(
         metadata_csv=csv_data,
         cect_root_dirs=cect_root_dirs,
@@ -212,7 +217,7 @@ def Inference(FLAGS):
         val_ratio=0.2,
         test_ratio=0.1,
         random_seed=42,
-        output_size=(224, 224),
+        output_size=(img_size, img_size),
         augment=False
     )
 
@@ -240,7 +245,7 @@ def Inference(FLAGS):
     for i, batch in enumerate(tqdm(test_loader)):
         image = batch["image"]
         label = batch["label"]
-        pred, metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[256, 256])
+        pred, metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[img_size, img_size])
         all_metrics.append(metric_i)
 
         # Plot and save the result
