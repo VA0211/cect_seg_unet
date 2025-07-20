@@ -167,7 +167,7 @@ def train(args, snapshot_path):
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 writer.add_image('train/GroundTruth', labs, iter_num)
 
-            if iter_num > 0 and iter_num % 5 == 0:
+            if iter_num > 0 and iter_num % 200 == 0:
                 model.eval()
                 metric_list = []
                 for i_batch, sampled_batch in enumerate(valloader):
@@ -219,7 +219,7 @@ def train(args, snapshot_path):
                     'iteration %d : mean_dice : %f mean_hd95 : %f mean_iou : %f' % (iter_num, performance, mean_hd95, mean_iou))
                 model.train()
 
-            if iter_num % 5 == 0:
+            if iter_num % 3000 == 0:
                 save_mode_path = os.path.join(
                     snapshot_path, 'iter_' + str(iter_num) + '.pth')
                 torch.save(model.state_dict(), save_mode_path)
