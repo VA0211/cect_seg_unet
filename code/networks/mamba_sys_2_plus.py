@@ -777,7 +777,7 @@ class VSSM(nn.Module):
 
             # self.concat_back_dim.append(concat_linear)
             self.layers_up.append(layer_up)
-            # self.concat_back_dim = nn.ModuleDict()
+            self.concat_back_dim = nn.ModuleDict()
             self.output_channels = {}
 
             for i in range(self.num_layers):
