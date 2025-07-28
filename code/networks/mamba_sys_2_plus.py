@@ -739,7 +739,7 @@ class VSSM(nn.Module):
         # Dynamically determine output channels of decoder blocks:
         self.output_channels = {}
         self.concat_back_dim = nn.ModuleDict()
-        test_spatial_sizes = [8, 16, 32, 64]  # Adjust to match your model's actual spatial sizes
+        test_spatial_sizes = [64, 32, 16, 8] # Adjust to match your model's actual spatial sizes
 
         for i in range(self.num_layers):
             dummy_spatial = test_spatial_sizes[i]
