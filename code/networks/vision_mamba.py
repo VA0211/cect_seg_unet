@@ -20,6 +20,7 @@ from yacs.config import CfgNode
 import torch.serialization
 torch.serialization.add_safe_globals([CfgNode])
 from .mamba_sys import VSSM
+from .mamba_sys_2_plus import VSSM_plus
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,18 @@ class MambaUnet(nn.Module):
         self.zero_head = zero_head
         self.config = config
 
-        self.mamba_unet =  VSSM(
+        # self.mamba_unet =  VSSM(
+        #                         patch_size=config.MODEL.VSSM.PATCH_SIZE,
+        #                         in_chans=config.MODEL.VSSM.IN_CHANS,
+        #                         num_classes=self.num_classes,
+        #                         embed_dim=config.MODEL.VSSM.EMBED_DIM,
+        #                         depths=config.MODEL.VSSM.DEPTHS,
+        #                         mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
+        #                         drop_rate=config.MODEL.DROP_RATE,
+        #                         drop_path_rate=config.MODEL.DROP_PATH_RATE,
+        #                         patch_norm=config.MODEL.SWIN.PATCH_NORM,
+        #                         use_checkpoint=config.TRAIN.USE_CHECKPOINT)
+        self.mamba_unet =  VSSM_plus(
                                 patch_size=config.MODEL.VSSM.PATCH_SIZE,
                                 in_chans=config.MODEL.VSSM.IN_CHANS,
                                 num_classes=self.num_classes,
