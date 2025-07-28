@@ -584,6 +584,8 @@ class VSSM_plus(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.num_layers = len(depths)
+        if isinstance(dims, int):
+            dims = [int(dims * 2 ** i_layer) for i_layer in range(self.num_layers)]
         self.embed_dim = dims[0]
         self.num_features = dims[-1]
         self.dims = dims
