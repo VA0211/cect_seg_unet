@@ -164,16 +164,26 @@ def selective_scan_flop_jit(inputs, outputs):
 
 
 class PatchEmbed2D(nn.Module):
-    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+    r""" Image to Patch Embedding
+    Args:
+        patch_size (int): Patch token size. Default: 4.
+        in_chans (int): Number of input image channels. Default: 3.
+        embed_dim (int): Number of linear projection output channels. Default: 96.
+        norm_layer (nn.Module, optional): Normalization layer. Default: None
+    """
+    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None, **kwargs):
         super().__init__()
         if isinstance(patch_size, int):
             patch_size = (patch_size, patch_size)
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
-        self.norm = norm_layer(embed_dim) if norm_layer else None
+        if norm_layer is not None:
+            self.norm = norm_layer(embed_dim)
+        else:
+            self.norm = None
 
     def forward(self, x):
         x = self.proj(x).permute(0, 2, 3, 1)
-        if self.norm:
+        if self.norm is not None:
             x = self.norm(x)
         return x
 
@@ -194,17 +204,27 @@ class PatchMerging2D(nn.Module):
 
     def forward(self, x):
         B, H, W, C = x.shape
-        x0 = x[:, 0::2, 0::2, :]
-        x1 = x[:, 1::2, 0::2, :]
-        x2 = x[:, 0::2, 1::2, :]
-        x3 = x[:, 1::2, 1::2, :]
-        min_h = min(x0.shape[1], x1.shape[1], x2.shape[1], x3.shape[1])
-        min_w = min(x0.shape[2], x1.shape[2], x2.shape[2], x3.shape[2])
-        x0 = x0[:, :min_h, :min_w, :]
-        x1 = x1[:, :min_h, :min_w, :]
-        x2 = x2[:, :min_h, :min_w, :]
-        x3 = x3[:, :min_h, :min_w, :]
-        x = torch.cat([x0, x1, x2, x3], -1)
+
+        SHAPE_FIX = [-1, -1]
+        if (W % 2 != 0) or (H % 2 != 0):
+            print(f"Warning, x.shape {x.shape} is not match even ===========", flush=True)
+            SHAPE_FIX[0] = H // 2
+            SHAPE_FIX[1] = W // 2
+
+        x0 = x[:, 0::2, 0::2, :]  # B H/2 W/2 C
+        x1 = x[:, 1::2, 0::2, :]  # B H/2 W/2 C
+        x2 = x[:, 0::2, 1::2, :]  # B H/2 W/2 C
+        x3 = x[:, 1::2, 1::2, :]  # B H/2 W/2 C
+
+        if SHAPE_FIX[0] > 0:
+            x0 = x0[:, :SHAPE_FIX[0], :SHAPE_FIX[1], :]
+            x1 = x1[:, :SHAPE_FIX[0], :SHAPE_FIX[1], :]
+            x2 = x2[:, :SHAPE_FIX[0], :SHAPE_FIX[1], :]
+            x3 = x3[:, :SHAPE_FIX[0], :SHAPE_FIX[1], :]
+        
+        x = torch.cat([x0, x1, x2, x3], -1)  # B H/2 W/2 4*C
+        x = x.view(B, H//2, W//2, 4 * C)  # B H/2*W/2 4*C
+
         x = self.norm(x)
         x = self.reduction(x)
 
@@ -214,15 +234,16 @@ class PatchExpand(nn.Module):
     def __init__(self, dim, dim_scale=2, norm_layer=nn.LayerNorm):
         super().__init__()
         self.dim = dim
-        self.expand = nn.Linear(dim, 2*dim, bias=False) if dim_scale == 2 else nn.Identity()
+        self.expand = nn.Linear(
+            dim, 2*dim, bias=False) if dim_scale == 2 else nn.Identity()
         self.norm = norm_layer(dim // dim_scale)
 
     def forward(self, x):
         x = self.expand(x)
         B, H, W, C = x.shape
-        x = x.view(B, H, W, 2, C//2)
-        x = x.permute(0, 1, 3, 2, 4).reshape(B, H*2, W, C//2)
-        x = self.norm(x)
+        x = rearrange(x, 'b h w (p1 p2 c)-> b (h p1) (w p2) c', p1=2, p2=2, c=C//4)
+        x= self.norm(x)
+
         return x
 
 class FinalPatchExpand_X4(nn.Module):
@@ -231,16 +252,16 @@ class FinalPatchExpand_X4(nn.Module):
         self.dim = dim
         self.dim_scale = dim_scale
         self.expand = nn.Linear(dim, 16*dim, bias=False)
-        self.norm = norm_layer(dim)
-        self.dim_scale = dim_scale
+        self.output_dim = dim 
+        self.norm = norm_layer(self.output_dim)
 
     def forward(self, x):
 
         x = self.expand(x)
         B, H, W, C = x.shape
-        x = x.view(B, H, W, self.dim_scale, self.dim_scale, C // (self.dim_scale**2))
-        x = x.permute(0, 1, 3, 2, 4, 5).reshape(B, H*self.dim_scale, W*self.dim_scale, C // (self.dim_scale**2))
-        x = self.norm(x)
+        x = rearrange(x, 'b h w (p1 p2 c)-> b (h p1) (w p2) c', p1=self.dim_scale, p2=self.dim_scale, c=C//(self.dim_scale**2))
+        x= self.norm(x)
+
         return x
 
 class SS2D(nn.Module):
@@ -517,7 +538,8 @@ class SS2D(nn.Module):
         if self.dropout is not None:
             out = self.dropout(out)
         return out
-    
+
+
 class VSSBlock(nn.Module):
     def __init__(
         self,
@@ -534,59 +556,146 @@ class VSSBlock(nn.Module):
         self.drop_path = DropPath(drop_path)
 
     def forward(self, input: torch.Tensor):
-        # x = input + self.drop_path(self.self_attention(self.ln_1(input)))
-        # return x
-        # Permute from [B, C, H, W] to [B, H, W, C]
-        x_ln = input.permute(0, 2, 3, 1).contiguous()
-        x_ln = self.ln_1(x_ln)
-        x_ln = x_ln.permute(0, 3, 1, 2).contiguous()
-        x = input + self.drop_path(self.self_attention(x_ln))
+        x = input + self.drop_path(self.self_attention(self.ln_1(input)))
         return x
 
-# --- Nested UNet++ Decoder
 
-class NestedVSSBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, vss_kwargs):
+class VSSLayer(nn.Module):
+    """ A basic Swin Transformer layer for one stage.
+    Args:
+        dim (int): Number of input channels.
+        depth (int): Number of blocks.
+        drop (float, optional): Dropout rate. Default: 0.0
+        attn_drop (float, optional): Attention dropout rate. Default: 0.0
+        drop_path (float | tuple[float], optional): Stochastic depth rate. Default: 0.0
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
+        downsample (nn.Module | None, optional): Downsample layer at the end of the layer. Default: None
+        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
+    """
+
+    def __init__(
+        self, 
+        dim, 
+        depth, 
+        attn_drop=0.,
+        drop_path=0., 
+        norm_layer=nn.LayerNorm, 
+        downsample=None, 
+        use_checkpoint=False, 
+        d_state=16,
+        **kwargs,
+    ):
         super().__init__()
-        self.align = nn.Linear(in_ch, out_ch)
-        self.block = VSSBlock(hidden_dim=out_ch, **vss_kwargs)
+        self.dim = dim
+        self.use_checkpoint = use_checkpoint
+
+        self.blocks = nn.ModuleList([
+            VSSBlock(
+                hidden_dim=dim,
+                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                norm_layer=norm_layer,
+                attn_drop_rate=attn_drop,
+                d_state=d_state,
+            )
+            for i in range(depth)])
+        
+        if True: # is this really applied? Yes, but been overriden later in VSSM!
+            def _init_weights(module: nn.Module):
+                for name, p in module.named_parameters():
+                    if name in ["out_proj.weight"]:
+                        p = p.clone().detach_() # fake init, just to keep the seed ....
+                        nn.init.kaiming_uniform_(p, a=math.sqrt(5))
+            self.apply(_init_weights)
+
+        if downsample is not None:
+            self.downsample = downsample(dim=dim, norm_layer=norm_layer)
+        else:
+            self.downsample = None
+
+
     def forward(self, x):
-        B, H, W, C_in = x.shape
-        x = self.align(x)
-        x = x.permute(0, 3, 1, 2)
-        x = self.block(x)
-        x = x.permute(0, 2, 3, 1)
+        for blk in self.blocks:
+            if self.use_checkpoint:
+                x = checkpoint.checkpoint(blk, x)
+            else:
+                x = blk(x)
+        
+        if self.downsample is not None:
+            x = self.downsample(x)
+
         return x
 
-class UNetPP_MambaDecoder(nn.Module):
-    def __init__(self, num_stages, feature_dims, vss_kwargs):
+class VSSLayer_up(nn.Module):
+    """ A basic Swin Transformer layer for one stage.
+    Args:
+        dim (int): Number of input channels.
+        depth (int): Number of blocks.
+        drop (float, optional): Dropout rate. Default: 0.0
+        attn_drop (float, optional): Attention dropout rate. Default: 0.0
+        drop_path (float | tuple[float], optional): Stochastic depth rate. Default: 0.0
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
+        Upsample (nn.Module | None, optional): Upsample layer at the end of the layer. Default: None
+        use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False.
+    """
+
+    def __init__(
+        self, 
+        dim, 
+        depth, 
+        attn_drop=0.,
+        drop_path=0., 
+        norm_layer=nn.LayerNorm, 
+        upsample=None, 
+        use_checkpoint=False, 
+        d_state=16,
+        **kwargs,
+    ):
         super().__init__()
-        self.num_stages = num_stages
-        self.feature_dims = feature_dims
-        self.vss_grid = nn.ModuleDict()
-        for j in range(1, num_stages):
-            for i in range(num_stages - j):
-                in_ch = feature_dims[i] * (j + 1)
-                out_ch = feature_dims[i]
-                self.vss_grid[f"{i}_{j}"] = NestedVSSBlock(in_ch, out_ch, vss_kwargs)
-    def forward(self, encoder_feats):
-        # encoder_feats: list, resolution low->high (deep->shallow)
-        grid = [[None for _ in range(self.num_stages)] for _ in range(self.num_stages)]
-        for i in range(self.num_stages):
-            grid[i][0] = encoder_feats[i]
-        for j in range(1, self.num_stages):
-            for i in range(self.num_stages - j):
-                collect = [grid[i][k] for k in range(j+1)]
-                x_cat = torch.cat(collect, dim=-1)
-                grid[i][j] = self.vss_grid[f"{i}_{j}"](x_cat)
-        return grid[0][self.num_stages-1]
+        self.dim = dim
+        self.use_checkpoint = use_checkpoint
 
-# --- VSSM (Mamba-UNet++) ---
+        self.blocks = nn.ModuleList([
+            VSSBlock(
+                hidden_dim=dim,
+                drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
+                norm_layer=norm_layer,
+                attn_drop_rate=attn_drop,
+                d_state=d_state,
+            )
+            for i in range(depth)])
+        
+        if True: # is this really applied? Yes, but been overriden later in VSSM!
+            def _init_weights(module: nn.Module):
+                for name, p in module.named_parameters():
+                    if name in ["out_proj.weight"]:
+                        p = p.clone().detach_() # fake init, just to keep the seed ....
+                        nn.init.kaiming_uniform_(p, a=math.sqrt(5))
+            self.apply(_init_weights)
 
-class VSSM_plus(nn.Module):
-    def __init__(self, patch_size=4, in_chans=1, num_classes=4, depths=[2,2,2,2], dims=[96,192,384,768], d_state=16,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1, norm_layer=nn.LayerNorm, patch_norm=True,
-                 use_checkpoint=False, final_upsample="expand_first"):
+        if upsample is not None:
+            self.upsample = PatchExpand(dim, dim_scale=2, norm_layer=nn.LayerNorm)
+        else:
+            self.upsample = None
+
+
+    def forward(self, x):
+        for blk in self.blocks:
+            if self.use_checkpoint:
+                x = checkpoint.checkpoint(blk, x)
+            else:
+                x = blk(x)
+        
+        if self.upsample is not None:
+            x = self.upsample(x)
+
+        return x
+
+
+class VSSM(nn.Module):
+    def __init__(self, patch_size=4, in_chans=1, num_classes=4, depths=[2, 2, 9, 2], 
+                 dims=[96, 192, 384, 768], d_state=16, drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
+                 norm_layer=nn.LayerNorm, patch_norm=True,
+                 use_checkpoint=False, final_upsample="expand_first", **kwargs):
         super().__init__()
         self.num_classes = num_classes
         self.num_layers = len(depths)
@@ -594,32 +703,98 @@ class VSSM_plus(nn.Module):
             dims = [int(dims * 2 ** i_layer) for i_layer in range(self.num_layers)]
         self.embed_dim = dims[0]
         self.num_features = dims[-1]
+        self.num_features_up = int(dims[0] * 2)
         self.dims = dims
         self.final_upsample = final_upsample
 
         self.patch_embed = PatchEmbed2D(patch_size=patch_size, in_chans=in_chans, embed_dim=self.embed_dim,
-                                        norm_layer=norm_layer if patch_norm else None)
+            norm_layer=norm_layer if patch_norm else None)
+
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+
+        # build encoder and bottleneck layers
         self.layers = nn.ModuleList()
-        for i in range(self.num_layers):
-            layer = VSSBlock(hidden_dim=int(dims[0]*2**i), d_state=d_state)
+        for i_layer in range(self.num_layers):
+            layer = VSSLayer(
+                # dim=dims[i_layer], #int(embed_dim * 2 ** i_layer)
+                dim = int(dims[0] * 2 ** i_layer),
+                depth=depths[i_layer],
+                d_state=math.ceil(dims[0] / 6) if d_state is None else d_state, # 20240109
+                drop=drop_rate, 
+                attn_drop=attn_drop_rate,
+                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
+                norm_layer=norm_layer,
+                downsample=PatchMerging2D if (i_layer < self.num_layers - 1) else None,
+                use_checkpoint=use_checkpoint,
+            )
             self.layers.append(layer)
-        self.downsamples = nn.ModuleList([
-            PatchMerging2D(dim=int(dims[0]*2**i), norm_layer=norm_layer) if i < self.num_layers-1 else nn.Identity()
-            for i in range(self.num_layers)
-        ])
-        vss_kwargs = dict(drop_path=drop_path_rate, attn_drop_rate=attn_drop_rate, d_state=d_state, norm_layer=norm_layer)
-        self.unetpp_decoder = UNetPP_MambaDecoder(self.num_layers, self.dims, vss_kwargs)
+
+        # build decoder layers
+        self.layers_up = nn.ModuleList()
+        self.concat_back_dim = nn.ModuleList()
+
+        for i_layer in range(self.num_layers):
+            # Calculate number of concatenated features at this decoder level for UNet++
+            num_concat = i_layer + 1  # Because nested skips at depth i_layer connect i_layer+1 features
+
+            # Calculate input channels to concat_back_dim linear layer
+            # Each features' channel dims from encoder 'x_downsample' at level: dims[-(i_layer+1)]
+            # Plus previous nested decoder outputs with dims[-(i_layer+1)] channels each
+
+            per_feature_channels = int(self.dims[0] * 2 ** (self.num_layers - 1 - i_layer))
+            concat_in_channels = per_feature_channels * num_concat
+            concat_out_channels = per_feature_channels
+
+            # Linear layer to reduce channel dim after concatenation, except for first decoder (identity)
+            if i_layer == 0:
+                concat_linear = nn.Identity()
+            else:
+                concat_linear = nn.Linear(concat_in_channels, concat_out_channels)
+
+            # Decoder layer (upsample or VSSLayer_up)
+            if i_layer == 0:
+                layer_up = PatchExpand(dim=concat_out_channels, dim_scale=2, norm_layer=nn.LayerNorm)
+            else:
+                layer_up = VSSLayer_up(
+                    dim=concat_out_channels,
+                    depth=depths[self.num_layers - 1 - i_layer],
+                    d_state=math.ceil(concat_out_channels / 6),
+                    drop=drop_rate,
+                    attn_drop=attn_drop_rate,
+                    drop_path=dpr[sum(depths[:self.num_layers - 1 - i_layer]):sum(depths[:self.num_layers - 1 - i_layer + 1])],
+                    norm_layer=norm_layer,
+                    upsample=PatchExpand if (i_layer < self.num_layers - 1) else None,
+                    use_checkpoint=use_checkpoint,
+                )
+
+            self.concat_back_dim.append(concat_linear)
+            self.layers_up.append(layer_up)
+
+        self.norm = norm_layer(self.num_features)
         self.norm_up = norm_layer(self.embed_dim)
 
         if self.final_upsample == "expand_first":
-            self.up = FinalPatchExpand_X4(dim=self.embed_dim, dim_scale=4, norm_layer=norm_layer)
-            self.output = nn.Conv2d(in_channels=self.embed_dim, out_channels=self.num_classes, kernel_size=1, bias=False)
+            print("---final upsample expand_first---")
+            self.up = FinalPatchExpand_X4(dim_scale=4,dim=self.embed_dim)
+            self.output = nn.Conv2d(in_channels=self.embed_dim,out_channels=self.num_classes,kernel_size=1,bias=False)
+
         self.apply(self._init_weights)
 
-    def _init_weights(self, m):
+
+
+    def _init_weights(self, m: nn.Module):
+        """
+        out_proj.weight which is previously initilized in VSSBlock, would be cleared in nn.Linear
+        no fc.weight found in the any of the model parameters
+        no nn.Embedding found in the any of the model parameters
+        so the thing is, VSSBlock initialization is useless
+        
+        Conv2D is not intialized !!!
+        """
+        # print(m, getattr(getattr(m, "weight", nn.Identity()), "INIT", None), isinstance(m, nn.Linear), "======================")
         if isinstance(m, nn.Linear):
-            nn.init.trunc_normal_(m.weight, std=.02)
-            if m.bias is not None:
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
@@ -628,35 +803,58 @@ class VSSM_plus(nn.Module):
     #Encoder and Bottleneck
     def forward_features(self, x):
         x = self.patch_embed(x)
-        features = []
-        for layer, down in zip(self.layers, self.downsamples):
-            features.append(x)
-            B, H, W, C = x.shape
-            x = x.permute(0,3,1,2)  # to BCHW
-            x = layer(x)
-            x = x.permute(0,2,3,1)  # to BHWC
-            x = down(x)
-        return features
 
-    def forward_up_features(self, encoder_feats):
-        # encoder_feats: resolution low->high (deep->shallow)
-        x = self.unetpp_decoder(encoder_feats)
+        x_downsample = []
+        for layer in self.layers:
+            x_downsample.append(x)
+            x = layer(x)
+        x = self.norm(x)  # B H W C
+        return x, x_downsample
+
+    # def forward_backbone(self, x):
+    #     x = self.patch_embed(x)
+
+    #     for layer in self.layers:
+    #         x = layer(x)
+    #     return x
+
+    #Dencoder and Skip connection
+    def forward_up_features(self, x, x_downsample):
+        depth = self.num_layers
+        dense_nodes = {}
+        # Nested dense skip connections as per UNet++
+        for i in range(depth):
+            for j in range(i + 1):
+                if j == 0:
+                    # First nested node receives only encoder feature
+                    input_feature = x_downsample[depth - 1 - i]
+                else:
+                    # Concatenate previous nested decoder features with encoder feature
+                    prev_feats = [dense_nodes[(i - 1, k)] for k in range(j)]
+                    prev_feats.append(x_downsample[depth - 1 - i])
+                    input_feature = torch.cat(prev_feats, dim=-1)
+                # Pass through concatenation linear layer (adjust channel dims)
+                input_feature = self.concat_back_dim[i](input_feature)
+                # Pass through decoder block
+                dense_nodes[(i, j)] = self.layers_up[i](input_feature)
+        # Aggregate output at the last decoder level (You can modify to add deep supervision here)
+        outputs = [dense_nodes[(depth - 1, j)] for j in range(depth)]
+        x = outputs[-1]  # Use last nested decoder node output by default
         x = self.norm_up(x)
         return x
 
     def up_x4(self, x):
-        if self.final_upsample == "expand_first":
-            B, H, W, C = x.shape
+        if self.final_upsample=="expand_first":
+            B,H,W,C = x.shape
             x = self.up(x)
             x = x.view(B, 4*H, 4*W, -1)
-            x = x.permute(0, 3, 1, 2)
+            x = x.permute(0, 3, 1, 2)  # B,C,H,W
             x = self.output(x)
             
         return x
-
     def forward(self, x):
-        encoder_feats = self.forward_features(x)
-        x = self.forward_up_features(encoder_feats)
+        x,x_downsample = self.forward_features(x)
+        x = self.forward_up_features(x,x_downsample)
         x = self.up_x4(x)
         return x
 
@@ -684,41 +882,41 @@ class VSSM_plus(nn.Module):
 
 
 # APIs with VMamba2Dp =================
-# def check_vssm_equals_vmambadp():
-#     from bak.vmamba_bak1 import VMamba2Dp
+def check_vssm_equals_vmambadp():
+    from bak.vmamba_bak1 import VMamba2Dp
 
-#     # test 1 True =================================
-#     torch.manual_seed(time.time()); torch.cuda.manual_seed(time.time())
-#     oldvss = VMamba2Dp(depths=[2,2,6,2]).half().cuda()
-#     newvss = VSSM(depths=[2,2,6,2]).half().cuda()
-#     newvss.load_state_dict(oldvss.state_dict())
-#     input = torch.randn((12, 3, 224, 224)).half().cuda()
-#     torch.cuda.manual_seed(0)
-#     with torch.cuda.amp.autocast():
-#         y1 = oldvss.forward_backbone(input)
-#     torch.cuda.manual_seed(0)
-#     with torch.cuda.amp.autocast():
-#         y2 = newvss.forward_backbone(input)
-#     print((y1 -y2).abs().sum()) # tensor(0., device='cuda:0', grad_fn=<SumBackward0>)
+    # test 1 True =================================
+    torch.manual_seed(time.time()); torch.cuda.manual_seed(time.time())
+    oldvss = VMamba2Dp(depths=[2,2,6,2]).half().cuda()
+    newvss = VSSM(depths=[2,2,6,2]).half().cuda()
+    newvss.load_state_dict(oldvss.state_dict())
+    input = torch.randn((12, 3, 224, 224)).half().cuda()
+    torch.cuda.manual_seed(0)
+    with torch.cuda.amp.autocast():
+        y1 = oldvss.forward_backbone(input)
+    torch.cuda.manual_seed(0)
+    with torch.cuda.amp.autocast():
+        y2 = newvss.forward_backbone(input)
+    print((y1 -y2).abs().sum()) # tensor(0., device='cuda:0', grad_fn=<SumBackward0>)
     
-#     # test 2 True ==========================================
-#     torch.manual_seed(0); torch.cuda.manual_seed(0)
-#     oldvss = VMamba2Dp(depths=[2,2,6,2]).cuda()
-#     torch.manual_seed(0); torch.cuda.manual_seed(0)
-#     newvss = VSSM(depths=[2,2,6,2]).cuda()
+    # test 2 True ==========================================
+    torch.manual_seed(0); torch.cuda.manual_seed(0)
+    oldvss = VMamba2Dp(depths=[2,2,6,2]).cuda()
+    torch.manual_seed(0); torch.cuda.manual_seed(0)
+    newvss = VSSM(depths=[2,2,6,2]).cuda()
 
-#     miss_align = 0
-#     for k, v in oldvss.state_dict().items(): 
-#         same = (oldvss.state_dict()[k] == newvss.state_dict()[k]).all()
-#         if not same:
-#             print(k, same)
-#             miss_align += 1
-#     print("init miss align", miss_align) # init miss align 0
+    miss_align = 0
+    for k, v in oldvss.state_dict().items(): 
+        same = (oldvss.state_dict()[k] == newvss.state_dict()[k]).all()
+        if not same:
+            print(k, same)
+            miss_align += 1
+    print("init miss align", miss_align) # init miss align 0
 
 
 if __name__ == "__main__":
     # check_vssm_equals_vmambadp()
-    model = VSSM_plus().to('cuda')
+    model = VSSM().to('cuda')
     int = torch.randn(16,1,224,224).cuda()
     out = model(int)
     print(out.shape)
