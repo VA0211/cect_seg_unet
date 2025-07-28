@@ -734,34 +734,40 @@ class VSSM(nn.Module):
         self.concat_back_dim = nn.ModuleList()
 
         for i_layer in range(self.num_layers):
-            # Calculate number of concatenated features at this decoder level for UNet++
-            num_concat = i_layer + 1  # Because nested skips at depth i_layer connect i_layer+1 features
+            # Number of concatenated features in UNet++ at decoder layer i_layer:
+            num_concat = i_layer + 1  # Because skip nodes indexed 0..i_layer
 
-            # Calculate input channels to concat_back_dim linear layer
-            # Each features' channel dims from encoder 'x_downsample' at level: dims[-(i_layer+1)]
-            # Plus previous nested decoder outputs with dims[-(i_layer+1)] channels each
+            # Channels per encoder feature at level matching decoder layer (reverse index)
+            per_feature_channels = int(self.dims[-(i_layer + 1)])  # dims are ordered low->high-res encoder
 
-            per_feature_channels = int(self.dims[0] * 2 ** (self.num_layers - 1 - i_layer))
+            # Total input channels after concatenation at this decoder layer
             concat_in_channels = per_feature_channels * num_concat
+
+            # We want to reduce concatenated channels back to per_feature_channels
             concat_out_channels = per_feature_channels
 
-            # Linear layer to reduce channel dim after concatenation, except for first decoder (identity)
+            # Linear layer to reduce channel dim after concatenation, no change for first decoder layer
             if i_layer == 0:
                 concat_linear = nn.Identity()
             else:
                 concat_linear = nn.Linear(concat_in_channels, concat_out_channels)
 
-            # Decoder layer (upsample or VSSLayer_up)
+            # Decoder layer upsamples spatially except for last decoder layer
             if i_layer == 0:
-                layer_up = PatchExpand(dim=concat_out_channels, dim_scale=2, norm_layer=nn.LayerNorm)
+                layer_up = PatchExpand(
+                    dim=concat_out_channels,
+                    dim_scale=2,
+                    norm_layer=nn.LayerNorm
+                )
             else:
+                depth_idx = self.num_layers - 1 - i_layer
                 layer_up = VSSLayer_up(
                     dim=concat_out_channels,
-                    depth=depths[self.num_layers - 1 - i_layer],
+                    depth=depths[depth_idx],
                     d_state=math.ceil(concat_out_channels / 6),
                     drop=drop_rate,
                     attn_drop=attn_drop_rate,
-                    drop_path=dpr[sum(depths[:self.num_layers - 1 - i_layer]):sum(depths[:self.num_layers - 1 - i_layer + 1])],
+                    drop_path=dpr[sum(depths[:depth_idx]):sum(depths[:depth_idx+1])],
                     norm_layer=norm_layer,
                     upsample=PatchExpand if (i_layer < self.num_layers - 1) else None,
                     use_checkpoint=use_checkpoint,
@@ -820,28 +826,43 @@ class VSSM(nn.Module):
 
     #Dencoder and Skip connection
     def forward_up_features(self, x, x_downsample):
+        """
+        UNet++ nested skip connections forward pass.
+        Args:
+            x: bottleneck output (lowest resolution)
+            x_downsample: list of encoder outputs at every level (high to low resolution)
+        Returns:
+            Decoder output tensor at full UNet++ decoding
+        """
         depth = self.num_layers
         dense_nodes = {}
-        # Nested dense skip connections as per UNet++
-        for i in range(depth):
-            for j in range(i + 1):
+
+        for i in range(depth):  # decoder layers 0 .. depth-1, 0 = bottom decoder level
+            for j in range(i + 1):  # nested skip nodes from 0..i at layer i
                 if j == 0:
-                    # First nested node receives only encoder feature
-                    input_feature = x_downsample[depth - 1 - i]
+                    # First node in nested skip is encoder feature at that level
+                    input_feature = x_downsample[-(i + 1)]
                 else:
-                    # Concatenate previous nested decoder features with encoder feature
+                    # Concatenate previous nested decoder nodes with corresponding encoder feature
                     prev_feats = [dense_nodes[(i - 1, k)] for k in range(j)]
-                    prev_feats.append(x_downsample[depth - 1 - i])
+                    prev_feats.append(x_downsample[-(i + 1)])
                     input_feature = torch.cat(prev_feats, dim=-1)
-                # Pass through concatenation linear layer (adjust channel dims)
+
+                # Pass concatenated features through linear to reduce channels (except first layer)
                 input_feature = self.concat_back_dim[i](input_feature)
-                # Pass through decoder block
+
+                # Decoder block forward
                 dense_nodes[(i, j)] = self.layers_up[i](input_feature)
-        # Aggregate output at the last decoder level (You can modify to add deep supervision here)
+
+        # Aggregate final outputs at top decoder level (layer = depth-1)
         outputs = [dense_nodes[(depth - 1, j)] for j in range(depth)]
-        x = outputs[-1]  # Use last nested decoder node output by default
-        x = self.norm_up(x)
+        # You can customize to combine outputs here for deep supervision; return last for now:
+        x = outputs[-1]
+
+        x = self.norm_up(x)  # final norm layer
+
         return x
+
 
     def up_x4(self, x):
         if self.final_upsample=="expand_first":
