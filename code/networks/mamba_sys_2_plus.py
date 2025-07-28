@@ -746,6 +746,8 @@ class VSSM(nn.Module):
             # We want to reduce concatenated channels back to per_feature_channels
             concat_out_channels = per_feature_channels
 
+            print(f"[Init] Decoder layer {i_layer}: num_concat={num_concat}, per_feature_channels={per_feature_channels}, concat_in_channels={concat_in_channels}, concat_out_channels={concat_out_channels}")
+            
             # Linear layer to reduce channel dim after concatenation, no change for first decoder layer
             if i_layer == 0:
                 concat_linear = nn.Identity()
@@ -773,8 +775,23 @@ class VSSM(nn.Module):
                     use_checkpoint=use_checkpoint,
                 )
 
-            self.concat_back_dim.append(concat_linear)
+            # self.concat_back_dim.append(concat_linear)
             self.layers_up.append(layer_up)
+            # self.concat_back_dim = nn.ModuleDict()
+            self.output_channels = {}
+
+            for i in range(self.num_layers):
+                for j in range(i + 1):
+                    if j == 0:
+                        # Only encoder skip feature
+                        in_ch = int(self.dims[-(i + 1)])
+                    else:
+                        # Sum output channels of previous decoder nodes at row i-1 and all k < j, plus encoder skip
+                        in_ch = sum([self.output_channels[(i - 1, k)] for k in range(j)]) + int(self.dims[-(i + 1)])
+                    out_ch = int(self.dims[-(i + 1)])  # Decoder output channels for this level
+                    self.output_channels[(i, j)] = out_ch
+                    key = f"{i}_{j}"
+                    self.concat_back_dim[key] = nn.Identity() if in_ch == out_ch else nn.Linear(in_ch, out_ch)
 
         self.norm = norm_layer(self.num_features)
         self.norm_up = norm_layer(self.embed_dim)
@@ -834,33 +851,41 @@ class VSSM(nn.Module):
         Returns:
             Decoder output tensor at full UNet++ decoding
         """
-        depth = self.num_layers
         dense_nodes = {}
-
-        for i in range(depth):  # decoder layers 0 .. depth-1, 0 = bottom decoder level
-            for j in range(i + 1):  # nested skip nodes from 0..i at layer i
-                if j == 0:
-                    # First node in nested skip is encoder feature at that level
-                    input_feature = x_downsample[-(i + 1)]
+        for i in range(self.num_layers):
+            for j in range(i + 1):
+                feats = []
+                target_size = x_downsample[-(i+1)].shape[1:3]  # (H, W)
+                # Gather previous decoder nodes at (i-1, k): upsample to target size as needed
+                if j > 0:
+                    for k in range(j):
+                        prev = dense_nodes[(i-1, k)]
+                        # Upsample if necessary (expecting (B, H, W, C))
+                        if prev.shape[1:3] != target_size:
+                            prev = F.interpolate(
+                                prev.permute(0, 3, 1, 2), size=target_size, mode='bilinear', align_corners=False
+                            ).permute(0, 2, 3, 1)
+                        feats.append(prev)
+                # Add encoder skip
+                feats.append(x_downsample[-(i+1)])
+                input_feature = torch.cat(feats, dim=-1)
+                # Pass through the correct projection for this (i, j)
+                key = f"{i}_{j}"
+                B, H, W, C_in = input_feature.shape
+                cat_layer = self.concat_back_dim[key]
+                if not isinstance(cat_layer, nn.Identity):
+                    input_feature = input_feature.view(B * H * W, C_in)
+                    input_feature = cat_layer(input_feature)
+                    input_feature = input_feature.view(B, H, W, -1)
                 else:
-                    # Concatenate previous nested decoder nodes with corresponding encoder feature
-                    prev_feats = [dense_nodes[(i - 1, k)] for k in range(j)]
-                    prev_feats.append(x_downsample[-(i + 1)])
-                    input_feature = torch.cat(prev_feats, dim=-1)
-
-                # Pass concatenated features through linear to reduce channels (except first layer)
-                input_feature = self.concat_back_dim[i](input_feature)
-
-                # Decoder block forward
-                dense_nodes[(i, j)] = self.layers_up[i](input_feature)
-
-        # Aggregate final outputs at top decoder level (layer = depth-1)
-        outputs = [dense_nodes[(depth - 1, j)] for j in range(depth)]
-        # You can customize to combine outputs here for deep supervision; return last for now:
+                    input_feature = cat_layer(input_feature)
+                # Decoder block for this row
+                decoder_block = self.layers_up[i]
+                dense_nodes[(i, j)] = decoder_block(input_feature)
+        # Aggregate/sum/final output (classic UNet++: choose the last node)
+        outputs = [dense_nodes[(self.num_layers - 1, j)] for j in range(self.num_layers)]
         x = outputs[-1]
-
-        x = self.norm_up(x)  # final norm layer
-
+        x = self.norm_up(x)
         return x
 
 

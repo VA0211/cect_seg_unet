@@ -152,17 +152,17 @@ def train(args, snapshot_path):
     )
 
     # Test set
-    db_test = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="test",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(256, 256),
-        augment=False
-    )
+    # db_test = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="test",
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(256, 256),
+    #     augment=False
+    # )
 
 
     def worker_init_fn(worker_id):
