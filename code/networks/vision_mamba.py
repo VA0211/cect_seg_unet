@@ -48,7 +48,7 @@ class MambaUnet(nn.Module):
                                 num_classes=self.num_classes,
                                 dims=config.MODEL.VSSM.EMBED_DIM,
                                 depths=config.MODEL.VSSM.DEPTHS,
-                                mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
+                                # mlp_ratio=config.MODEL.SWIN.MLP_RATIO,
                                 drop_rate=config.MODEL.DROP_RATE,
                                 drop_path_rate=config.MODEL.DROP_PATH_RATE,
                                 patch_norm=config.MODEL.SWIN.PATCH_NORM,
