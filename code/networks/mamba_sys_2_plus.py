@@ -534,7 +534,13 @@ class VSSBlock(nn.Module):
         self.drop_path = DropPath(drop_path)
 
     def forward(self, input: torch.Tensor):
-        x = input + self.drop_path(self.self_attention(self.ln_1(input)))
+        # x = input + self.drop_path(self.self_attention(self.ln_1(input)))
+        # return x
+        # Permute from [B, C, H, W] to [B, H, W, C]
+        x_ln = input.permute(0, 2, 3, 1).contiguous()
+        x_ln = self.ln_1(x_ln)
+        x_ln = x_ln.permute(0, 3, 1, 2).contiguous()
+        x = input + self.drop_path(self.self_attention(x_ln))
         return x
 
 # --- Nested UNet++ Decoder
