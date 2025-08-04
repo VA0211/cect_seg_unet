@@ -67,7 +67,8 @@ class UNet3plus(nn.Module):
         self.conv_e5_d1 = ConvBlock(f, f)
         self.conv_d1 = ConvBlock(f * 5, f * 5)
 
-        self.out_conv = nn.Conv2d(f * 5, num_classes, 3, padding=1)
+        # self.out_conv = nn.Conv2d(f * 5, num_classes, 3, padding=1)
+        self.out_conv = nn.Conv2d(f * 5, 1, 3, padding=1)
 
     def forward(self, x):
         # Encoder
@@ -122,5 +123,6 @@ class UNet3plus(nn.Module):
         d1 = self.conv_d1(torch.cat([e1_d1, d2_d1, d3_d1, d4_d1, e5_d1], dim=1))
 
         out = self.out_conv(d1)
-        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)  # <--- INSERT THIS
+        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)
+        out = torch.sigmoid(out)
         return out
