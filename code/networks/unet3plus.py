@@ -122,4 +122,5 @@ class UNet3plus(nn.Module):
         d1 = self.conv_d1(torch.cat([e1_d1, d2_d1, d3_d1, d4_d1, e5_d1], dim=1))
 
         out = self.out_conv(d1)
+        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)  # <--- INSERT THIS
         return out
