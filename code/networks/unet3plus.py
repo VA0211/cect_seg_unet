@@ -13,32 +13,34 @@ class ConvBlock(nn.Module):
         return self.act(self.bn(self.conv(x)))
 
 class UNet3plus(nn.Module):
-    def __init__(self, img_size=(256, 256, 1), num_classes=4, base_filters=64, in_ch=1, pretrained=True):
+    def __init__(self, img_size=(256, 256, 1), num_classes=2, base_filters=64, in_ch=1, pretrained=True):
         super().__init__()
-        # --- ResNet50 Encoder ---
+        # ResNet50 Encoder
         resnet = resnet50(pretrained=pretrained)
-        # Fix for 1-channel or N-channel input
         if in_ch != 3:
             weight = resnet.conv1.weight.clone()
             resnet.conv1 = nn.Conv2d(in_ch, 64, kernel_size=7, stride=2, padding=3, bias=False)
             if in_ch == 1:
                 resnet.conv1.weight.data = weight.sum(dim=1, keepdim=True)
-            else:  # for in_ch>3, do your custom init
+            else:
                 resnet.conv1.weight.data[:, :3] = weight
+
         self.enc1 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu)
         self.enc2 = nn.Sequential(resnet.maxpool, resnet.layer1)
         self.enc3 = resnet.layer2
         self.enc4 = resnet.layer3
         self.enc5 = resnet.layer4
 
-        f = base_filters  # All features standardized to this
+        f = base_filters
+        
+        # Standardize encoder outputs to base_filters channels
         self.conv_encode1 = ConvBlock(64, f)
         self.conv_encode2 = ConvBlock(256, f)
         self.conv_encode3 = ConvBlock(512, f)
         self.conv_encode4 = ConvBlock(1024, f)
         self.conv_encode5 = ConvBlock(2048, f)
 
-        # Decoder convs, one for each input to every decoder block
+        # Decoder convolution blocks
         self.conv_e1_d4 = ConvBlock(f, f)
         self.conv_e2_d4 = ConvBlock(f, f)
         self.conv_e3_d4 = ConvBlock(f, f)
@@ -67,18 +69,15 @@ class UNet3plus(nn.Module):
         self.conv_e5_d1 = ConvBlock(f, f)
         self.conv_d1 = ConvBlock(f * 5, f * 5)
 
-        # self.out_conv = nn.Conv2d(f * 5, num_classes, 3, padding=1)
-        self.out_conv = nn.Conv2d(f * 5, 1, 3, padding=1)
+        self.out_conv = nn.Conv2d(f * 5, num_classes, 3, padding=1)
 
     def forward(self, x):
-        # Encoder
-        e1 = self.enc1(x)      # [N, 64, H//2, W//2]
-        e2 = self.enc2(e1)     # [N, 256, H//4, W//4]
-        e3 = self.enc3(e2)     # [N, 512, H//8, W//8]
-        e4 = self.enc4(e3)     # [N,1024, H//16,W//16]
-        e5 = self.enc5(e4)     # [N,2048,H//32,W//32]
+        e1 = self.enc1(x)      # [N, 64, H/2, W/2]
+        e2 = self.enc2(e1)     # [N, 256, H/4, W/4]
+        e3 = self.enc3(e2)     # [N, 512, H/8, W/8]
+        e4 = self.enc4(e3)     # [N,1024,H/16,W/16]
+        e5 = self.enc5(e4)     # [N,2048,H/32,W/32]
 
-        # Standardize channels for all encoding features
         e1_c = self.conv_encode1(e1)
         e2_c = self.conv_encode2(e2)
         e3_c = self.conv_encode3(e3)
@@ -92,7 +91,6 @@ class UNet3plus(nn.Module):
         e3_d4 = self.conv_e3_d4(F.adaptive_max_pool2d(e3_c, size4))
         e4_d4 = self.conv_e4_d4(e4_c)
         e5_d4 = self.conv_e5_d4(F.interpolate(e5_c, size=size4, mode='bilinear', align_corners=False))
-        # All shapes match size4
         d4 = self.conv_d4(torch.cat([e1_d4, e2_d4, e3_d4, e4_d4, e5_d4], dim=1))
 
         # Decoder 3
@@ -124,5 +122,5 @@ class UNet3plus(nn.Module):
 
         out = self.out_conv(d1)
         out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)
-        out = torch.sigmoid(out)
+        # raw logits output - do NOT apply softmax/sigmoid here to keep consistent with the training code
         return out
