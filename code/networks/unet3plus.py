@@ -171,6 +171,8 @@ class MambaUNet3plus(nn.Module):
         self.out_conv = nn.Conv2d(f * 4, num_classes, 3, padding=1)
 
     def forward(self, x):
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
         # Get hierarchical features from MambaVision
         with torch.no_grad():  # Backbone in eval mode by default
             _, features = self.mamba(x)
