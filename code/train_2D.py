@@ -26,7 +26,7 @@ from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
 
-from networks.unet3plus import UNet3plus
+from networks.unet3plus import UNet3plus, MambaUNet3plus
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
@@ -61,7 +61,7 @@ def train(args, snapshot_path):
     IMG_H = args.patch_size[0]
     IMG_W = args.patch_size[1]
 
-    model = UNet3plus((IMG_H, IMG_W, 1)).cuda()
+    model = MambaUNet3plus((IMG_H, IMG_W, 1)).cuda()
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
     cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
