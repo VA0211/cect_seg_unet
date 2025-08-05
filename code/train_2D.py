@@ -61,7 +61,8 @@ def train(args, snapshot_path):
     IMG_H = args.patch_size[0]
     IMG_W = args.patch_size[1]
 
-    model = MambaUNet3plus((IMG_H, IMG_W, 1)).cuda()
+    # model = UNet3plus((IMG_H, IMG_W, 1)).cuda()
+    model = MambaUNet3plus().cuda()
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
     cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]

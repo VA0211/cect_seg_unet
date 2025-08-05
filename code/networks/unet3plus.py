@@ -127,7 +127,7 @@ class UNet3plus(nn.Module):
         return out
 
 class MambaUNet3plus(nn.Module):
-    def __init__(self, num_classes=2, base_filters=64, pretrained=True, in_ch=3, backbone_ckpt="nvidia/MambaVision-T-1K"):
+    def __init__(self, num_classes=2, base_filters=64, pretrained=True, in_ch=1, backbone_ckpt="nvidia/MambaVision-T-1K"):
         super().__init__()
         # MambaVision as backbone
         self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
