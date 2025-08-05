@@ -105,7 +105,7 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
     elif net_type == "unet3plus_resnet":
         net = UNet3plus((args.patch_size[0], args.patch_size[0], in_chns)).cuda()
     elif net_type == "mamba_unet3plus":
-        net = MambaUNet3plus((args.patch_size[0], args.patch_size[0], in_chns)).cuda()
+        net = MambaUNet3plus().cuda()
     else:
         net = None
     return net
