@@ -69,6 +69,11 @@ def train(args, snapshot_path):
     cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
+    # unet, mamabunet
+    # img_size = 256
+    # swimunet
+    img_size = 224
+
     # Train set
     db_train = LiverTumorSliceDataset(
         metadata_csv=csv_data,
@@ -78,7 +83,7 @@ def train(args, snapshot_path):
         val_ratio=0.2,
         test_ratio=0.1,
         random_seed=42,
-        output_size=(256, 256),
+        output_size=(img_size, img_size),
         augment=True
     )
 
@@ -91,7 +96,7 @@ def train(args, snapshot_path):
         val_ratio=0.2,
         test_ratio=0.1,
         random_seed=42,
-        output_size=(256, 256),
+        output_size=(img_size, img_size),
         augment=False
     )
 
