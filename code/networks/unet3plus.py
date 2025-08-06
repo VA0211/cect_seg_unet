@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import resnet50
 from transformers import AutoModel
+import timm
 
 class ConvBlock(nn.Module):
     def __init__(self, in_ch, out_ch, act=True):
@@ -13,8 +14,8 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
 
-class UNet3plus(nn.Module):
-    def __init__(self, img_size=(256, 256, 1), num_classes=2, base_filters=64, in_ch=1, pretrained=True):
+class Resnet50_Unet3plus(nn.Module):
+    def __init__(self, num_classes=2, base_filters=64, in_ch=1, pretrained=True):
         super().__init__()
         # ResNet50 Encoder
         resnet = resnet50(pretrained=pretrained)
@@ -127,7 +128,14 @@ class UNet3plus(nn.Module):
         return out
 
 class MambaUNet3plus(nn.Module):
-    def __init__(self, num_classes=2, base_filters=64, pretrained=True, in_ch=1, backbone_ckpt="nvidia/MambaVision-T-1K"):
+    def __init__(
+        self, 
+        num_classes=2, 
+        base_filters=64, 
+        pretrained=True, 
+        in_ch=1, 
+        backbone_ckpt="nvidia/MambaVision-T-1K"
+    ):
         super().__init__()
         # MambaVision as backbone
         self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
@@ -219,3 +227,104 @@ class MambaUNet3plus(nn.Module):
         out = self.out_conv(d1)
         out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)
         return out
+
+class Transformer_UNet3plus(nn.Module):
+    def __init__(
+        self, 
+        num_classes=2, 
+        base_filters=64, 
+        in_ch=1, 
+        backbone="swin_small_patch4_window7_224", 
+        pretrained=True
+    ):
+        super().__init__()
+        # Swin Small backbone
+        self.encoder = timm.create_model(
+            backbone, features_only=True, pretrained=pretrained, in_chans=3  # Swin expects 3ch images
+        )
+        encoder_channels = self.encoder.feature_info.channels()
+        f = base_filters  # bottleneck channel size for decoder
+
+        # Hierarchical feature channel reducers
+        self.conv_encode1 = ConvBlock(encoder_channels[0], f)
+        self.conv_encode2 = ConvBlock(encoder_channels[1], f)
+        self.conv_encode3 = ConvBlock(encoder_channels[2], f)
+        self.conv_encode4 = ConvBlock(encoder_channels[3], f)
+
+        # Decoder convolution blocks
+        self.conv_e1_d4 = ConvBlock(f, f)
+        self.conv_e2_d4 = ConvBlock(f, f)
+        self.conv_e3_d4 = ConvBlock(f, f)
+        self.conv_e4_d4 = ConvBlock(f, f)
+        self.conv_d4 = ConvBlock(f * 4, f * 4)
+
+        self.conv_e1_d3 = ConvBlock(f, f)
+        self.conv_e2_d3 = ConvBlock(f, f)
+        self.conv_e3_d3 = ConvBlock(f, f)
+        self.conv_d4_d3 = ConvBlock(f * 4, f)
+        self.conv_d3 = ConvBlock(f * 4, f * 4)
+
+        self.conv_e1_d2 = ConvBlock(f, f)
+        self.conv_e2_d2 = ConvBlock(f, f)
+        self.conv_d3_d2 = ConvBlock(f * 4, f)
+        self.conv_d4_d2 = ConvBlock(f * 4, f)
+        self.conv_d2 = ConvBlock(f * 4, f * 4)
+
+        self.conv_e1_d1 = ConvBlock(f, f)
+        self.conv_d2_d1 = ConvBlock(f * 4, f)
+        self.conv_d3_d1 = ConvBlock(f * 4, f)
+        self.conv_d4_d1 = ConvBlock(f * 4, f)
+        self.conv_d1 = ConvBlock(f * 4, f * 4)
+
+        self.out_conv = nn.Conv2d(f * 4, num_classes, 3, padding=1)
+
+        self.in_ch = in_ch  # record for use in forward
+
+    def forward(self, x):
+        # Ensure 3 channel input for Swin backbone
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
+        elif x.shape[1] > 3:
+            x = x[:, :3, :, :]  # Truncate to 3 chans if >3
+
+        feats = self.encoder(x)  # list: [feat1, feat2, feat3, feat4] (low→high res)
+        e1_c = self.conv_encode1(feats[0])  # [B, f, H/4, W/4]
+        e2_c = self.conv_encode2(feats[1])  # [B, f, H/8, W/8]
+        e3_c = self.conv_encode3(feats[2])  # [B, f, H/16, W/16]
+        e4_c = self.conv_encode4(feats[3])  # [B, f, H/32, W/32]
+
+        # Decoder 4
+        size4 = e4_c.shape[2:]
+        e1_d4 = self.conv_e1_d4(F.adaptive_max_pool2d(e1_c, size4))
+        e2_d4 = self.conv_e2_d4(F.adaptive_max_pool2d(e2_c, size4))
+        e3_d4 = self.conv_e3_d4(F.adaptive_max_pool2d(e3_c, size4))
+        e4_d4 = self.conv_e4_d4(e4_c)
+        d4 = self.conv_d4(torch.cat([e1_d4, e2_d4, e3_d4, e4_d4], dim=1))
+
+        # Decoder 3
+        size3 = e3_c.shape[2:]
+        e1_d3 = self.conv_e1_d3(F.adaptive_max_pool2d(e1_c, size3))
+        e2_d3 = self.conv_e2_d3(F.adaptive_max_pool2d(e2_c, size3))
+        e3_d3 = self.conv_e3_d3(e3_c)
+        d4_d3 = self.conv_d4_d3(F.interpolate(d4, size=size3, mode='bilinear', align_corners=False))
+        d3 = self.conv_d3(torch.cat([e1_d3, e2_d3, e3_d3, d4_d3], dim=1))
+
+        # Decoder 2
+        size2 = e2_c.shape[2:]
+        e1_d2 = self.conv_e1_d2(F.adaptive_max_pool2d(e1_c, size2))
+        e2_d2 = self.conv_e2_d2(e2_c)
+        d3_d2 = self.conv_d3_d2(F.interpolate(d3, size=size2, mode='bilinear', align_corners=False))
+        d4_d2 = self.conv_d4_d2(F.interpolate(d4, size=size2, mode='bilinear', align_corners=False))
+        d2 = self.conv_d2(torch.cat([e1_d2, e2_d2, d3_d2, d4_d2], dim=1))
+
+        # Decoder 1 (finest scale)
+        size1 = e1_c.shape[2:]
+        e1_d1 = self.conv_e1_d1(e1_c)
+        d2_d1 = self.conv_d2_d1(F.interpolate(d2, size=size1, mode='bilinear', align_corners=False))
+        d3_d1 = self.conv_d3_d1(F.interpolate(d3, size=size1, mode='bilinear', align_corners=False))
+        d4_d1 = self.conv_d4_d1(F.interpolate(d4, size=size1, mode='bilinear', align_corners=False))
+        d1 = self.conv_d1(torch.cat([e1_d1, d2_d1, d3_d1, d4_d1], dim=1))
+
+        out = self.out_conv(d1)
+        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)  # match input spatial size
+        return out  # [B, num_classes, H, W]
