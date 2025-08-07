@@ -171,7 +171,8 @@ def train(args, snapshot_path):
                         sampled_batch["label"],
                         model,
                         classes=num_classes,
-                        patch_size=args.patch_size
+                        # patch_size=args.patch_size
+                        patch_size=[img_size, img_size]
                     )
                     metric_list.append(metric_i)
                 metric_list = np.array(metric_list)
