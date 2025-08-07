@@ -98,7 +98,7 @@ def calculate_metric_percase(pred, gt, num_classes=2):
 #             prediction == i, label == i))
 #     return metric_list
 
-def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
+def test_single_volume(image, label, net, classes=2, patch_size=[224, 224]):
     image = image.squeeze().cpu().numpy()   # shape: [H, W]
     label = label.squeeze().cpu().numpy()   # shape: [H, W]
 
@@ -114,7 +114,7 @@ def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
 
     return calculate_metric_percase(pred, label, num_classes=classes)
 
-def test_single_volume_ds(image, label, net, classes, patch_size=[256, 256]):
+def test_single_volume_ds(image, label, net, classes, patch_size=[224, 224]):
     image, label = image.squeeze(0).cpu().detach(
     ).numpy(), label.squeeze(0).cpu().detach().numpy()
     prediction = np.zeros_like(label)
