@@ -238,20 +238,18 @@ class Transformer_UNet3plus(nn.Module):
         pretrained=True
     ):
         super().__init__()
-        # Swin Small backbone
+        # Swin Small backbone (always expects in_chans=3)
         self.encoder = timm.create_model(
-            backbone, features_only=True, pretrained=pretrained, in_chans=3  # Swin expects 3ch images
+            backbone, features_only=True, pretrained=pretrained, in_chans=3
         )
         encoder_channels = self.encoder.feature_info.channels()
-        f = base_filters  # bottleneck channel size for decoder
+        f = base_filters
 
-        # Hierarchical feature channel reducers
         self.conv_encode1 = ConvBlock(encoder_channels[0], f)
         self.conv_encode2 = ConvBlock(encoder_channels[1], f)
         self.conv_encode3 = ConvBlock(encoder_channels[2], f)
         self.conv_encode4 = ConvBlock(encoder_channels[3], f)
 
-        # Decoder convolution blocks
         self.conv_e1_d4 = ConvBlock(f, f)
         self.conv_e2_d4 = ConvBlock(f, f)
         self.conv_e3_d4 = ConvBlock(f, f)
@@ -287,11 +285,17 @@ class Transformer_UNet3plus(nn.Module):
         elif x.shape[1] > 3:
             x = x[:, :3, :, :]  # Truncate to 3 chans if >3
 
-        feats = self.encoder(x)  # list: [feat1, feat2, feat3, feat4] (low→high res)
-        e1_c = self.conv_encode1(feats[0])  # [B, f, H/4, W/4]
-        e2_c = self.conv_encode2(feats[1])  # [B, f, H/8, W/8]
-        e3_c = self.conv_encode3(feats[2])  # [B, f, H/16, W/16]
-        e4_c = self.conv_encode4(feats[3])  # [B, f, H/32, W/32]
+        feats = self.encoder(x)
+        # Patch: ensure all features are NCHW
+        for i in range(len(feats)):
+            if feats[i].dim() == 4 and feats[i].shape[1] < feats[i].shape[-1]:
+                # Detected NHWC, convert to NCHW
+                feats[i] = feats[i].permute(0, 3, 1, 2).contiguous()
+        
+        e1_c = self.conv_encode1(feats[0])
+        e2_c = self.conv_encode2(feats[1])
+        e3_c = self.conv_encode3(feats[2])
+        e4_c = self.conv_encode4(feats[3])
 
         # Decoder 4
         size4 = e4_c.shape[2:]
@@ -326,5 +330,5 @@ class Transformer_UNet3plus(nn.Module):
         d1 = self.conv_d1(torch.cat([e1_d1, d2_d1, d3_d1, d4_d1], dim=1))
 
         out = self.out_conv(d1)
-        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)  # match input spatial size
-        return out  # [B, num_classes, H, W]
+        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)
+        return out  # [B, num_classes, H, W], raw logits
