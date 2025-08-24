@@ -77,7 +77,7 @@ class ConvBlock(nn.Module):
 
 class Resnet50_Unet3plus_attn(nn.Module):
     def __init__(self, num_classes=2, base_filters=64, in_ch=1, pretrained=True,
-                 decoder_attn="se", attn_reduction=16):
+                 decoder_attn="cbam", attn_reduction=16):
         super().__init__()
         # ResNet50 Encoder
         resnet = resnet50(pretrained=pretrained)
