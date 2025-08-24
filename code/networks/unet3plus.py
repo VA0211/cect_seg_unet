@@ -5,15 +5,196 @@ from torchvision.models import resnet50
 from transformers import AutoModel
 import timm
 
+# -------------------------
+# Attention modules
+# -------------------------
+
+class SEBlock(nn.Module):
+    def __init__(self, ch, reduction=16):
+        super().__init__()
+        rd = max(1, ch // reduction)
+        self.avg = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(ch, rd, 1, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(rd, ch, 1, bias=True),
+            nn.Sigmoid()
+        )
+    def forward(self, x):
+        w = self.fc(self.avg(x))
+        return x * w
+
+class CBAM(nn.Module):
+    """Channel + Spatial attention (Woo et al., 2018)."""
+    def __init__(self, ch, reduction=16, spatial_kernel=7):
+        super().__init__()
+        rd = max(1, ch // reduction)
+        # Channel attention
+        self.mlp = nn.Sequential(
+            nn.Conv2d(ch, rd, 1, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(rd, ch, 1, bias=True)
+        )
+        # Spatial attention
+        padding = spatial_kernel // 2
+        self.spatial = nn.Conv2d(2, 1, kernel_size=spatial_kernel, padding=padding, bias=False)
+    def forward(self, x):
+        # Channel attention
+        avg = torch.mean(x, dim=1, keepdim=True)
+        mx  = torch.max(x, dim=1, keepdim=True).values
+        ca = torch.sigmoid(self.mlp(avg) + self.mlp(mx))
+        x = x * ca
+        # Spatial attention
+        avg_sp = torch.mean(x, dim=1, keepdim=True)
+        max_sp = torch.max(x, dim=1, keepdim=True).values
+        sa = torch.sigmoid(self.spatial(torch.cat([avg_sp, max_sp], dim=1)))
+        return x * sa
+
+# -------------------------
+# ConvBlock with optional attention
+# -------------------------
+
 class ConvBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, act=True):
+    def __init__(self, in_ch, out_ch, act=True, attn=None, reduction=16):
         super().__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False)
         self.bn = nn.BatchNorm2d(out_ch) if act else nn.Identity()
         self.act = nn.ReLU(inplace=True) if act else nn.Identity()
-    def forward(self, x):
-        return self.act(self.bn(self.conv(x)))
 
+        if attn.lower() == "se":
+            self.attn = SEBlock(out_ch, reduction=reduction)
+        elif attn.lower() == "cbam":
+            self.attn = CBAM(out_ch, reduction=reduction)
+        else:
+            self.attn = nn.Identity()
+
+    def forward(self, x):
+        x = self.act(self.bn(self.conv(x)))
+        x = self.attn(x)   # attention AFTER conv+bn+relu
+        return x
+
+class Resnet50_Unet3plus_attn(nn.Module):
+    def __init__(self, num_classes=2, base_filters=64, in_ch=1, pretrained=True,
+                 decoder_attn="se", attn_reduction=16):
+        super().__init__()
+        # ResNet50 Encoder
+        resnet = resnet50(pretrained=pretrained)
+        if in_ch != 3:
+            weight = resnet.conv1.weight.clone()
+            resnet.conv1 = nn.Conv2d(in_ch, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            if in_ch == 1:
+                resnet.conv1.weight.data = weight.sum(dim=1, keepdim=True)
+            else:
+                resnet.conv1.weight.data[:, :3] = weight
+
+        self.enc1 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu)
+        self.enc2 = nn.Sequential(resnet.maxpool, resnet.layer1)
+        self.enc3 = resnet.layer2
+        self.enc4 = resnet.layer3
+        self.enc5 = resnet.layer4
+
+        f = base_filters
+        
+        # Standardize encoder outputs to base_filters channels
+        # Encoder standardization (NO attention here)
+        self.conv_encode1 = ConvBlock(64,   f, attn=None)
+        self.conv_encode2 = ConvBlock(256,  f, attn=None)
+        self.conv_encode3 = ConvBlock(512,  f, attn=None)
+        self.conv_encode4 = ConvBlock(1024, f, attn=None)
+        self.conv_encode5 = ConvBlock(2048, f, attn=None)
+
+        # Helper to create decoder blocks with attention
+        def DConv(in_ch, out_ch):
+            return ConvBlock(in_ch, out_ch, attn=decoder_attn, reduction=attn_reduction)
+
+        # Decoder 4
+        self.conv_e1_d4 = DConv(f, f)
+        self.conv_e2_d4 = DConv(f, f)
+        self.conv_e3_d4 = DConv(f, f)
+        self.conv_e4_d4 = DConv(f, f)
+        self.conv_e5_d4 = DConv(f, f)
+        self.conv_d4    = DConv(f * 5, f * 5)
+
+        # Decoder 3
+        self.conv_e1_d3 = DConv(f, f)
+        self.conv_e2_d3 = DConv(f, f)
+        self.conv_e3_d3 = DConv(f, f)
+        self.conv_d4_d3 = DConv(f * 5, f)
+        self.conv_e5_d3 = DConv(f, f)
+        self.conv_d3    = DConv(f * 5, f * 5)
+
+        # Decoder 2
+        self.conv_e1_d2 = DConv(f, f)
+        self.conv_e2_d2 = DConv(f, f)
+        self.conv_d3_d2 = DConv(f * 5, f)
+        self.conv_d4_d2 = DConv(f * 5, f)
+        self.conv_e5_d2 = DConv(f, f)
+        self.conv_d2    = DConv(f * 5, f * 5)
+
+        # Decoder 1
+        self.conv_e1_d1 = DConv(f, f)
+        self.conv_d2_d1 = DConv(f * 5, f)
+        self.conv_d3_d1 = DConv(f * 5, f)
+        self.conv_d4_d1 = DConv(f * 5, f)
+        self.conv_e5_d1 = DConv(f, f)
+        self.conv_d1    = DConv(f * 5, f * 5)
+
+        self.out_conv = nn.Conv2d(f * 5, num_classes, 3, padding=1)
+
+    def forward(self, x):
+        e1 = self.enc1(x)      # [N, 64, H/2, W/2]
+        e2 = self.enc2(e1)     # [N, 256, H/4, W/4]
+        e3 = self.enc3(e2)     # [N, 512, H/8, W/8]
+        e4 = self.enc4(e3)     # [N,1024,H/16,W/16]
+        e5 = self.enc5(e4)     # [N,2048,H/32,W/32]
+
+        e1_c = self.conv_encode1(e1)
+        e2_c = self.conv_encode2(e2)
+        e3_c = self.conv_encode3(e3)
+        e4_c = self.conv_encode4(e4)
+        e5_c = self.conv_encode5(e5)
+
+        # Decoder 4
+        size4 = e4_c.shape[2:]
+        e1_d4 = self.conv_e1_d4(F.adaptive_max_pool2d(e1_c, size4))
+        e2_d4 = self.conv_e2_d4(F.adaptive_max_pool2d(e2_c, size4))
+        e3_d4 = self.conv_e3_d4(F.adaptive_max_pool2d(e3_c, size4))
+        e4_d4 = self.conv_e4_d4(e4_c)
+        e5_d4 = self.conv_e5_d4(F.interpolate(e5_c, size=size4, mode='bilinear', align_corners=False))
+        d4 = self.conv_d4(torch.cat([e1_d4, e2_d4, e3_d4, e4_d4, e5_d4], dim=1))
+
+        # Decoder 3
+        size3 = e3_c.shape[2:]
+        e1_d3 = self.conv_e1_d3(F.adaptive_max_pool2d(e1_c, size3))
+        e2_d3 = self.conv_e2_d3(F.adaptive_max_pool2d(e2_c, size3))
+        e3_d3 = self.conv_e3_d3(e3_c)
+        d4_d3 = self.conv_d4_d3(F.interpolate(d4, size=size3, mode='bilinear', align_corners=False))
+        e5_d3 = self.conv_e5_d3(F.interpolate(e5_c, size=size3, mode='bilinear', align_corners=False))
+        d3 = self.conv_d3(torch.cat([e1_d3, e2_d3, e3_d3, d4_d3, e5_d3], dim=1))
+
+        # Decoder 2
+        size2 = e2_c.shape[2:]
+        e1_d2 = self.conv_e1_d2(F.adaptive_max_pool2d(e1_c, size2))
+        e2_d2 = self.conv_e2_d2(e2_c)
+        d3_d2 = self.conv_d3_d2(F.interpolate(d3, size=size2, mode='bilinear', align_corners=False))
+        d4_d2 = self.conv_d4_d2(F.interpolate(d4, size=size2, mode='bilinear', align_corners=False))
+        e5_d2 = self.conv_e5_d2(F.interpolate(e5_c, size=size2, mode='bilinear', align_corners=False))
+        d2 = self.conv_d2(torch.cat([e1_d2, e2_d2, d3_d2, d4_d2, e5_d2], dim=1))
+
+        # Decoder 1 (finest scale)
+        size1 = e1_c.shape[2:]
+        e1_d1 = self.conv_e1_d1(e1_c)
+        d2_d1 = self.conv_d2_d1(F.interpolate(d2, size=size1, mode='bilinear', align_corners=False))
+        d3_d1 = self.conv_d3_d1(F.interpolate(d3, size=size1, mode='bilinear', align_corners=False))
+        d4_d1 = self.conv_d4_d1(F.interpolate(d4, size=size1, mode='bilinear', align_corners=False))
+        e5_d1 = self.conv_e5_d1(F.interpolate(e5_c, size=size1, mode='bilinear', align_corners=False))
+        d1 = self.conv_d1(torch.cat([e1_d1, d2_d1, d3_d1, d4_d1, e5_d1], dim=1))
+
+        out = self.out_conv(d1)
+        out = F.interpolate(out, size=x.shape[2:], mode='bilinear', align_corners=False)
+        # raw logits output - do NOT apply softmax/sigmoid here to keep consistent with the training code
+        return out
+    
 class Resnet50_Unet3plus(nn.Module):
     def __init__(self, num_classes=2, base_filters=64, in_ch=1, pretrained=True):
         super().__init__()

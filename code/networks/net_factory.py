@@ -2,7 +2,7 @@ from networks.efficientunet import Effi_UNet
 from networks.enet import ENet
 from networks.pnet import PNet2D
 from networks.unet import UNet, UNet_DS, UNet_URPC, UNet_CCT
-from networks.unet3plus import Resnet50_Unet3plus, MambaUNet3plus, Transformer_UNet3plus
+from networks.unet3plus import Resnet50_Unet3plus, MambaUNet3plus, Transformer_UNet3plus, Resnet50_Unet3plus_attn
 import argparse
 from networks.vision_transformer import SwinUnet as ViT_seg
 from networks.vision_mamba import MambaUnet as VIM_seg
@@ -108,6 +108,8 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
         net = MambaUNet3plus().cuda()
     elif net_type == "trans_unet3plus":
         net = Transformer_UNet3plus().cuda()
+    elif net_type == "unet3plus_resnet_attn":
+        net = Resnet50_Unet3plus_attn((args.patch_size[0], args.patch_size[0], in_chns)).cuda()
     else:
         net = None
     return net

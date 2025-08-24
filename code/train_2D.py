@@ -70,9 +70,9 @@ def train(args, snapshot_path):
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     # unet, mamabunet
-    # img_size = 256
+    img_size = 256
     # swimunet
-    img_size = 224
+    # img_size = 224
 
     # Train set
     db_train = LiverTumorSliceDataset(
