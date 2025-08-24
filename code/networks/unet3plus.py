@@ -61,12 +61,14 @@ class ConvBlock(nn.Module):
         self.bn = nn.BatchNorm2d(out_ch) if act else nn.Identity()
         self.act = nn.ReLU(inplace=True) if act else nn.Identity()
 
-        if attn.lower() == "se":
+        if attn == None:
+            self.attn = nn.Identity()
+        elif attn.lower() == "se":
             self.attn = SEBlock(out_ch, reduction=reduction)
         elif attn.lower() == "cbam":
             self.attn = CBAM(out_ch, reduction=reduction)
         else:
-            self.attn = nn.Identity()
+            raise("Error!!! Not found", attn)
 
     def forward(self, x):
         x = self.act(self.bn(self.conv(x)))
