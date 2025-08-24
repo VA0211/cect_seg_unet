@@ -95,7 +95,8 @@ class Resnet50_Unet3plus_attn(nn.Module):
         self.enc4 = resnet.layer3
         self.enc5 = resnet.layer4
 
-        f = base_filters
+        num_classes = int(num_classes)
+        f = int(base_filters)
         
         # Standardize encoder outputs to base_filters channels
         # Encoder standardization (NO attention here)
