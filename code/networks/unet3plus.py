@@ -25,30 +25,38 @@ class SEBlock(nn.Module):
         return x * w
 
 class CBAM(nn.Module):
-    """Channel + Spatial attention (Woo et al., 2018)."""
     def __init__(self, ch, reduction=16, spatial_kernel=7):
         super().__init__()
         rd = max(1, ch // reduction)
-        # Channel attention
+
+        # Channel attention MLP (fc layers applied after global pooling)
         self.mlp = nn.Sequential(
-            nn.Conv2d(ch, rd, 1, bias=True),
+            nn.Linear(ch, rd),
             nn.ReLU(inplace=True),
-            nn.Conv2d(rd, ch, 1, bias=True)
+            nn.Linear(rd, ch)
         )
+
         # Spatial attention
         padding = spatial_kernel // 2
-        self.spatial = nn.Conv2d(2, 1, kernel_size=spatial_kernel, padding=padding, bias=False)
+        self.spatial = nn.Conv2d(2, 1, kernel_size=spatial_kernel,
+                                 padding=padding, bias=False)
+
     def forward(self, x):
-        # Channel attention
-        avg = torch.mean(x, dim=1, keepdim=True)
-        mx  = torch.max(x, dim=1, keepdim=True).values
-        ca = torch.sigmoid(self.mlp(avg) + self.mlp(mx))
+        # ----- Channel Attention -----
+        b, c, h, w = x.size()
+
+        avg = F.adaptive_avg_pool2d(x, 1).view(b, c)   # [B, C]
+        mx  = F.adaptive_max_pool2d(x, 1).view(b, c)   # [B, C]
+
+        ca = torch.sigmoid(self.mlp(avg) + self.mlp(mx)).view(b, c, 1, 1)
         x = x * ca
-        # Spatial attention
-        avg_sp = torch.mean(x, dim=1, keepdim=True)
+
+        # ----- Spatial Attention -----
+        avg_sp = torch.mean(x, dim=1, keepdim=True)    # [B, 1, H, W]
         max_sp = torch.max(x, dim=1, keepdim=True).values
         sa = torch.sigmoid(self.spatial(torch.cat([avg_sp, max_sp], dim=1)))
-        return x * sa
+        x = x * sa
+        return x
 
 # -------------------------
 # ConvBlock with optional attention
