@@ -83,9 +83,59 @@ class ConvBlock(nn.Module):
         x = self.attn(x)   # attention AFTER conv+bn+relu
         return x
 
+class ASPP(nn.Module):
+    def __init__(self, in_ch, out_ch, rates=(1, 6, 12, 18)):
+        super().__init__()
+        self.blocks = nn.ModuleList()
+
+        # 1x1 convolution
+        self.blocks.append(nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 1, bias=False),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True)
+        ))
+
+        # Dilated convolutions
+        for r in rates:
+            self.blocks.append(nn.Sequential(
+                nn.Conv2d(in_ch, out_ch, 3, padding=r, dilation=r, bias=False),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(inplace=True)
+            ))
+
+        # Image-level pooling branch
+        self.blocks.append(nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_ch, out_ch, 1, bias=False),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True)
+        ))
+
+        # Final projection
+        self.project = nn.Sequential(
+            nn.Conv2d(out_ch * (len(rates) + 2), out_ch, 1, bias=False),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        h, w = x.shape[2:]
+        feats = []
+
+        for i, block in enumerate(self.blocks):
+            if i == len(self.blocks) - 1:  # global pooling branch
+                pooled = block(x)
+                pooled = F.interpolate(pooled, size=(h, w), mode="bilinear", align_corners=False)
+                feats.append(pooled)
+            else:
+                feats.append(block(x))
+
+        out = torch.cat(feats, dim=1)
+        return self.project(out)
+
 class Resnet50_Unet3plus_attn(nn.Module):
     def __init__(self, num_classes=2, base_filters=64, in_ch=1, pretrained=True,
-                 decoder_attn="cbam", attn_reduction=16):
+                 decoder_attn="cbam", apply_aspp=True, attn_reduction=16):
         super().__init__()
         # ResNet50 Encoder
         resnet = resnet50(pretrained=pretrained)
@@ -105,6 +155,7 @@ class Resnet50_Unet3plus_attn(nn.Module):
 
         num_classes = int(num_classes)
         f = int(base_filters)
+        self.apply_aspp = apply_aspp
         
         # Standardize encoder outputs to base_filters channels
         # Encoder standardization (NO attention here)
@@ -113,6 +164,10 @@ class Resnet50_Unet3plus_attn(nn.Module):
         self.conv_encode3 = ConvBlock(512,  f, attn=None)
         self.conv_encode4 = ConvBlock(1024, f, attn=None)
         self.conv_encode5 = ConvBlock(2048, f, attn=None)
+
+        if self.apply_aspp:
+            # ASPP on the deepest feature map
+            self.aspp = ASPP(f, f)
 
         # Helper to create decoder blocks with attention
         def DConv(in_ch, out_ch):
@@ -164,6 +219,10 @@ class Resnet50_Unet3plus_attn(nn.Module):
         e3_c = self.conv_encode3(e3)
         e4_c = self.conv_encode4(e4)
         e5_c = self.conv_encode5(e5)
+
+        if self.apply_aspp:
+            # Apply ASPP at the bottleneck
+            e5_c = self.aspp(e5_c)
 
         # Decoder 4
         size4 = e4_c.shape[2:]
