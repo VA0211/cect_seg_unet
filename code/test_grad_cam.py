@@ -233,7 +233,7 @@ def Inference(FLAGS):
             input_tensor = input_tensor.cuda()
 
         # Grad-CAM for class=1 (adjust depending on dataset)
-        grayscale_cam = run_gradcam(net, input_tensor, target_category=1)
+        grayscale_cam = run_gradcam(net, input_tensor, pred, target_category=1)
 
         # Convert grayscale CT to RGB for overlay
         rgb_img = np.float32(cv2.cvtColor((img_resized * 255).astype(np.uint8),
