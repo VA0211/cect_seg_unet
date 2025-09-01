@@ -159,7 +159,7 @@ def run_gradcam(net, input_tensor, target_category=1):
 # ----------------------------
 # Your Inference function
 # ----------------------------
-def Inference(FLAGS, net, test_loader, img_size, test_save_path, test_single_volume, save_liver_and_tumor_masks):
+def Inference(FLAGS):
     """
     Run inference and save both predictions and Grad-CAM heatmaps.
     """
