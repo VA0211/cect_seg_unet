@@ -190,6 +190,11 @@ def Inference(FLAGS):
     test_save_path = f"{snapshot_path}_predictions_plot/"
     os.makedirs(test_save_path, exist_ok=True)
 
+    pred_save_path = os.path.join(test_save_path, "pred")
+    gradcam_save_path = os.path.join(test_save_path, "gradcam")
+    os.makedirs(pred_save_path, exist_ok=True)
+    os.makedirs(gradcam_save_path, exist_ok=True)
+
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
     save_mode_path = os.path.join(f"/kaggle/input/cect_model_weight/pytorch/default/{FLAGS.labeled_num}", f'{FLAGS.model}_best_model.pth')
     print(save_mode_path)
@@ -213,7 +218,7 @@ def Inference(FLAGS):
         # Plot and save the result
         img_np = image.squeeze().cpu().numpy()
         label_np = label.squeeze().cpu().numpy()
-        save_file = os.path.join(test_save_path, f"pred/test_{i}.png")
+        save_file = os.path.join(pred_save_path, f"test_{i}.png")
         save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
 
         # ------------------------
@@ -235,7 +240,7 @@ def Inference(FLAGS):
         cam_image = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
 
         # Save Grad-CAM visualization
-        cam_save_path = os.path.join(test_save_path, f"gradcam/grad_test_{i}.png")
+        cam_save_path = os.path.join(gradcam_save_path, f"grad_test_{i}.png")
         cv2.imwrite(cam_save_path, cv2.cvtColor(cam_image, cv2.COLOR_RGB2BGR))
 
     df = pd.DataFrame(all_metrics, columns=metric_names)
