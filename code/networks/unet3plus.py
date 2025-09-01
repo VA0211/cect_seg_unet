@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import resnet50
-from transformers import AutoModel
+from transformers import AutoModel, AutoBackbone
 import timm
 
 # -------------------------
@@ -285,6 +285,7 @@ class Resnet50_Unet3plus(nn.Module):
         self.enc5 = resnet.layer4
 
         f = base_filters
+        num_classes = int(num_classes)
         
         # Standardize encoder outputs to base_filters channels
         self.conv_encode1 = ConvBlock(64, f)
@@ -389,7 +390,7 @@ class MambaUNet3plus(nn.Module):
     ):
         super().__init__()
         # MambaVision as backbone
-        self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
+        self.mamba = AutoBackbone.from_pretrained(backbone_ckpt, trust_remote_code=True)
         if pretrained:
             self.mamba.eval()
         # MambaVision stages output: features[0]:80, features[1]:160, features[2]:320, features[3]:640 channels
