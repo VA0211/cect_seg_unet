@@ -149,7 +149,7 @@ def run_gradcam(net, input_tensor, target_category=1):
         target_category: class index to highlight (default=1 for foreground/tumor)
     """
     target_layer = get_last_conv_layer(net)
-    cam = GradCAM(model=net, target_layers=[target_layer], use_cuda=torch.cuda.is_available())
+    cam = GradCAM(model=net, target_layers=[target_layer])
 
     targets = [SemanticSegmentationTarget(target_category, None)]
     grayscale_cam = cam(input_tensor=input_tensor, targets=targets)  # (B,H,W)
