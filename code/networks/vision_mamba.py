@@ -19,8 +19,8 @@ from scipy import ndimage
 from yacs.config import CfgNode
 import torch.serialization
 torch.serialization.add_safe_globals([CfgNode])
-# from .mamba_sys import VSSM
-from .mamba_sys_2_plus import VSSM
+from .mamba_sys import VSSM
+# from .mamba_sys_2_plus import VSSM
 
 logger = logging.getLogger(__name__)
 
