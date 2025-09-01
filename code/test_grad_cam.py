@@ -139,19 +139,20 @@ def get_last_conv_layer(model):
 # ----------------------------
 # Helper: run Grad-CAM
 # ----------------------------
-def run_gradcam(net, input_tensor, target_category=1):
+def run_gradcam(net, input_tensor, pred, target_category=1):
     """
     Run Grad-CAM on segmentation model.
 
     Args:
         net: trained nn.Module
         input_tensor: torch.Tensor of shape (1,1,H,W)
+        pred: np.ndarray (H,W), predicted segmentation mask
         target_category: class index to highlight (default=1 for foreground/tumor)
     """
     target_layer = get_last_conv_layer(net)
     cam = GradCAM(model=net, target_layers=[target_layer])
 
-    targets = [SemanticSegmentationTarget(target_category, None)]
+    targets = [SemanticSegmentationTarget(target_category, pred)]
     grayscale_cam = cam(input_tensor=input_tensor, targets=targets)  # (B,H,W)
     return grayscale_cam[0]
 
