@@ -390,7 +390,7 @@ class MambaUNet3plus(nn.Module):
     ):
         super().__init__()
         # MambaVision as backbone
-        self.mamba = AutoBackbone.from_pretrained(backbone_ckpt, trust_remote_code=True)
+        self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
         if pretrained:
             self.mamba.eval()
         # MambaVision stages output: features[0]:80, features[1]:160, features[2]:320, features[3]:640 channels

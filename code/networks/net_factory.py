@@ -103,7 +103,7 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
         net = VIM_seg(config, img_size=args.patch_size,
                       num_classes=args.num_classes).cuda()
     elif net_type == "unet3plus_resnet":
-        net = Resnet50_Unet3plus((args.patch_size[0], args.patch_size[0], in_chns)).cuda()
+        net = Resnet50_Unet3plus().cuda()
     elif net_type == "mamba_unet3plus":
         net = MambaUNet3plus().cuda()
     elif net_type == "trans_unet3plus":
