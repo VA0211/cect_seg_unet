@@ -384,19 +384,11 @@ class MambaUNet3plus(nn.Module):
         self, 
         num_classes=2, 
         base_filters=64, 
-        pretrained=True, 
+        pretrained=False, 
         in_ch=1, 
         backbone_ckpt="nvidia/MambaVision-T-1K"
     ):
         super().__init__()
-        try:
-            from mamba_ssm.models.mamba_vision import MambaVision
-            if not hasattr(MambaVision, "_initialize_weights"):
-                def _dummy_initialize_weights(self, *args, **kwargs):
-                    return
-                MambaVision._initialize_weights = _dummy_initialize_weights
-        except ImportError:
-            pass
         # MambaVision as backbone
         self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
         if pretrained:
