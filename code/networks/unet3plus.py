@@ -379,24 +379,24 @@ class Resnet50_Unet3plus(nn.Module):
         # raw logits output - do NOT apply softmax/sigmoid here to keep consistent with the training code
         return out
 
-bb_mamba = AutoModel.from_pretrained("nvidia/MambaVision-T-1K", trust_remote_code=True)
-for p in bb_mamba.parameters():
-    p.requires_grad = False
+# bb_mamba = AutoModel.from_pretrained("nvidia/MambaVision-T-1K", trust_remote_code=True)
+# for p in bb_mamba.parameters():
+#     p.requires_grad = False
 
 class MambaUNet3plus(nn.Module):
     def __init__(
         self, 
         num_classes=2, 
         base_filters=64, 
-        pretrained=False, 
+        pretrained=True, 
         in_ch=1, 
         backbone_ckpt="nvidia/MambaVision-T-1K"
     ):
         super().__init__()
         # MambaVision as backbone
-        # self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
-        self.mamba = bb_mamba
-        
+        self.mamba = AutoModel.from_pretrained(backbone_ckpt, trust_remote_code=True)
+        # self.mamba = bb_mamba
+
         if pretrained:
             self.mamba.eval()
         # MambaVision stages output: features[0]:80, features[1]:160, features[2]:320, features[3]:640 channels
