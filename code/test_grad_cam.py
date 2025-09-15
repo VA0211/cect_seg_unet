@@ -188,7 +188,7 @@ def Inference(FLAGS):
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
     snapshot_path = f"/kaggle/working/model_test/{FLAGS.model}"
-    test_save_path = f"{snapshot_path}_predictions_plot/"
+    test_save_path = f"{snapshot_path}_aspp_predictions_plot/"
     os.makedirs(test_save_path, exist_ok=True)
 
     pred_save_path = os.path.join(test_save_path, "pred")
