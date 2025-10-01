@@ -209,9 +209,9 @@ def Inference(FLAGS):
     mask_dir = "/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     # unet, mamabunet
-    # img_size = 256
+    img_size = 256
     # swimunet
-    img_size = 224
+    # img_size = 224
 
     db_test = LiverTumorSliceDataset(
         metadata_csv=csv_data,
