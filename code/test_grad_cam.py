@@ -209,9 +209,9 @@ def Inference(FLAGS):
     mask_dir = "/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     # unet, mamabunet
-    img_size = 256
+    # img_size = 256
     # swimunet
-    # img_size = 224
+    img_size = 224
 
     db_test = LiverTumorSliceDataset(
         metadata_csv=csv_data,
@@ -233,10 +233,10 @@ def Inference(FLAGS):
 
     pred_save_path = os.path.join(test_save_path, "pred")
     gradcam_save_path = os.path.join(test_save_path, "gradcam")
-    truth_save_path =  os.path.join(test_save_path, "ground_truth")
+    # truth_save_path =  os.path.join(test_save_path, "ground_truth")
     os.makedirs(pred_save_path, exist_ok=True)
     os.makedirs(gradcam_save_path, exist_ok=True)
-    os.makedirs(truth_save_path, exist_ok=True)
+    # os.makedirs(truth_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
     save_mode_path = os.path.join(f"/kaggle/input/cect_model_weight/pytorch/default/{FLAGS.labeled_num}", f'{FLAGS.model}_best_model.pth')
@@ -262,9 +262,9 @@ def Inference(FLAGS):
         img_np = image.squeeze().cpu().numpy()
         label_np = label.squeeze().cpu().numpy()
         save_file = os.path.join(pred_save_path, f"test_{i}.png")
-        save_truth_file = os.path.join(truth_save_path, f"test_{i}.png")
+        # save_truth_file = os.path.join(truth_save_path, f"test_{i}.png")
         save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
-        save_truth_tumor_masks(img_np, tumor_mask=label_np, save_path=save_truth_file)
+        # save_truth_tumor_masks(img_np, tumor_mask=label_np, save_path=save_truth_file)
 
         # ------------------------
         # 2. Run Grad-CAM
