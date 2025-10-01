@@ -239,7 +239,7 @@ def Inference(FLAGS):
     # os.makedirs(truth_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
-    save_mode_path = os.path.join(f"/kaggle/input/cect_model_weight/pytorch/default/{FLAGS.labeled_num}", f'{FLAGS.model}_best_model.pth')
+    save_mode_path = os.path.join(f"/kaggle/input/cect_model_weight/pytorch/default/{FLAGS.labeled_num}", f'{FLAGS.model}_attn_se_best_model.pth')
     print(save_mode_path)
     net.load_state_dict(torch.load(save_mode_path))
     net.eval()
