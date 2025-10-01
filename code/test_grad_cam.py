@@ -36,6 +36,16 @@ parser.add_argument('--labeled_num', type=int, default=140,
 # parser.add_argument('--model_weight_path', type=str,
 #                     default='', help='model_weight_path')
 
+def save_truth_tumor_masks(image, tumor_mask=None, alpha=0.4, save_path=None):
+    plt.figure(figsize=(6, 6))
+    plt.imshow(image, cmap='gray')
+    if tumor_mask is not None:
+        plt.imshow(tumor_mask, cmap='Reds', alpha=alpha)
+    plt.axis('off')
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.close()
+
 def save_liver_and_tumor_masks(image, tumor_mask=None, alpha=0.4, pred_tumor_mask=None, beta=0.5, save_path=None):
     plt.figure(figsize=(6, 6))
     plt.imshow(image, cmap='gray')
@@ -135,6 +145,35 @@ def get_last_conv_layer(model):
             return module
     raise ValueError("No Conv2d layer found in model")
 
+def get_target_conv_layer(model, offset=0):
+    """
+    Find a specific Conv2d layer in the model by its reverse index.
+
+    Args:
+        model (torch.nn.Module): The model to search within.
+        offset (int): The offset from the last Conv2d layer. 
+                      0 for the last, 1 for the second-to-last, etc.
+
+    Returns:
+        torch.nn.Module: The target Conv2d layer.
+        
+    Raises:
+        ValueError: If no Conv2d layer is found at the specified offset.
+    """
+    conv_counter = 0
+    target_layer = None
+    
+    # Iterate through the model's modules in reverse order
+    for module in reversed(list(model.modules())):
+        if isinstance(module, torch.nn.Conv2d):
+            if conv_counter == offset:
+                target_layer = module
+                return target_layer
+            conv_counter += 1
+            
+    # If the loop completes and the layer wasn't found
+    raise ValueError(f"Could not find a Conv2d layer with offset {offset}. "
+                     f"Only {conv_counter} Conv2d layers were found.")
 
 # ----------------------------
 # Helper: run Grad-CAM
@@ -149,7 +188,8 @@ def run_gradcam(net, input_tensor, pred, target_category=1):
         pred: np.ndarray (H,W), predicted segmentation mask
         target_category: class index to highlight (default=1 for foreground/tumor)
     """
-    target_layer = get_last_conv_layer(net)
+    # target_layer = get_last_conv_layer(net)
+    target_layer = get_target_conv_layer(net, offset=1)
     cam = GradCAM(model=net, target_layers=[target_layer])
 
     targets = [SemanticSegmentationTarget(target_category, pred)]
@@ -193,8 +233,10 @@ def Inference(FLAGS):
 
     pred_save_path = os.path.join(test_save_path, "pred")
     gradcam_save_path = os.path.join(test_save_path, "gradcam")
+    truth_save_path =  os.path.join(test_save_path, "ground_truth")
     os.makedirs(pred_save_path, exist_ok=True)
     os.makedirs(gradcam_save_path, exist_ok=True)
+    os.makedirs(truth_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
     save_mode_path = os.path.join(f"/kaggle/input/cect_model_weight/pytorch/default/{FLAGS.labeled_num}", f'{FLAGS.model}_best_model.pth')
@@ -220,7 +262,9 @@ def Inference(FLAGS):
         img_np = image.squeeze().cpu().numpy()
         label_np = label.squeeze().cpu().numpy()
         save_file = os.path.join(pred_save_path, f"test_{i}.png")
+        save_truth_file = os.path.join(truth_save_path, f"test_{i}.png")
         save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
+        save_truth_tumor_masks(img_np, tumor_mask=label_np, save_path=save_truth_file)
 
         # ------------------------
         # 2. Run Grad-CAM
