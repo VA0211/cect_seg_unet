@@ -59,6 +59,14 @@ def save_liver_and_tumor_masks(image, tumor_mask=None, alpha=0.4, pred_tumor_mas
         plt.savefig(save_path, bbox_inches='tight')
     plt.close()
 
+def save_test_imgs(image, save_path=None):
+    plt.figure(figsize=(6, 6))
+    plt.imshow(image, cmap='gray')
+    plt.axis('off')
+    if save_path:
+        plt.savefig(image, bbox_inches='tight')
+    plt.close()
+
 def calculate_metric_percase(pred, gt, num_classes=2):
     """
     pred, gt: numpy arrays of shape [H, W] or [D, H, W]
@@ -233,9 +241,11 @@ def Inference(FLAGS):
 
     pred_save_path = os.path.join(test_save_path, "pred")
     gradcam_save_path = os.path.join(test_save_path, "gradcam")
+    img_save_path = os.path.join(test_save_path, "test_imgs")
     # truth_save_path =  os.path.join(test_save_path, "ground_truth")
     os.makedirs(pred_save_path, exist_ok=True)
     os.makedirs(gradcam_save_path, exist_ok=True)
+    os.makedirs(img_save_path, exist_ok=True)
     # os.makedirs(truth_save_path, exist_ok=True)
 
     net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
@@ -263,7 +273,9 @@ def Inference(FLAGS):
         label_np = label.squeeze().cpu().numpy()
         save_file = os.path.join(pred_save_path, f"test_{i}.png")
         # save_truth_file = os.path.join(truth_save_path, f"test_{i}.png")
-        save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
+        save_test_file = os.path.join(save_test_imgs, f"test_{i}.png")
+        save_test_imgs(img_np, save_path=save_test_file)
+        # save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
         # save_truth_tumor_masks(img_np, tumor_mask=label_np, save_path=save_truth_file)
 
         # ------------------------
