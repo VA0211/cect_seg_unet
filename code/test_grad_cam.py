@@ -273,7 +273,7 @@ def Inference(FLAGS):
         label_np = label.squeeze().cpu().numpy()
         save_file = os.path.join(pred_save_path, f"test_{i}.png")
         # save_truth_file = os.path.join(truth_save_path, f"test_{i}.png")
-        save_test_file = os.path.join(save_test_imgs, f"test_{i}.png")
+        save_test_file = os.path.join(img_save_path, f"test_{i}.png")
         save_test_imgs(img_np, save_path=save_test_file)
         # save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
         # save_truth_tumor_masks(img_np, tumor_mask=label_np, save_path=save_truth_file)
