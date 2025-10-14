@@ -197,7 +197,7 @@ def run_gradcam(net, input_tensor, pred, target_category=1):
         target_category: class index to highlight (default=1 for foreground/tumor)
     """
     # target_layer = get_last_conv_layer(net)
-    target_layer = get_target_conv_layer(net, offset=1)
+    target_layer = get_target_conv_layer(net, offset=2)
     cam = GradCAM(model=net, target_layers=[target_layer])
 
     targets = [SemanticSegmentationTarget(target_category, pred)]
