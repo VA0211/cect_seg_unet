@@ -21,7 +21,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset, LiverTumorSliceDatasetPatient
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
@@ -66,6 +66,7 @@ def train(args, snapshot_path):
     model = net_factory(net_type=args.model)
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
+    patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
     cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
@@ -75,28 +76,44 @@ def train(args, snapshot_path):
     # img_size = 224
 
     # Train set
-    db_train = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
+    # db_train = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="train",
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(img_size, img_size),
+    #     augment=True
+    # )
+
+    # Validation set
+    # db_val = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="val",
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(img_size, img_size),
+    #     augment=False
+    # )
+
+    db_train = LiverTumorSliceDatasetPatient(
+        split_file=patient_csv_data,
+        split="train",                         
         cect_root_dirs=cect_root_dirs,
         mask_dir=mask_dir,
-        split="train",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
         augment=True
     )
 
-    # Validation set
-    db_val = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
+    db_val = LiverTumorSliceDatasetPatient(
+        split_file=patient_csv_data,
+        split="val",                         
         cect_root_dirs=cect_root_dirs,
         mask_dir=mask_dir,
-        split="val",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
         augment=False
     )
 

@@ -21,6 +21,134 @@ import pandas as pd
 from scipy.ndimage import zoom
 from sklearn.model_selection import train_test_split
 
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+class LiverTumorSliceDatasetPatient(Dataset):
+    def __init__(self, 
+                 split_file,              # <-- NEW: Path to "file_splits.csv"
+                 split,                   # "train", "val", or "test"
+                 cect_root_dirs,        
+                 mask_dir,
+                 output_size=(256, 256),    
+                 augment=True):
+        
+        self.cect_root_dirs = cect_root_dirs
+        self.mask_dir = mask_dir
+        self.output_size = output_size
+        self.split = split.lower()
+        self.augment = augment and self.split == "train"
+
+        # --- NEW SIMPLIFIED LOGIC ---
+        try:
+            # Load the master split file
+            all_splits_df = pd.read_csv(split_file)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Master split file not found: {split_file}\n"
+                                    "Did you run create_file_splits.py?")
+        
+        # Filter for the *current* split (e.g., 'train')
+        df_this_split = all_splits_df[all_splits_df['split'] == self.split]
+        
+        # Get the list of file names for this split
+        # Use a set for (much) faster lookups in _collect_slices
+        self.valid_files = set(df_this_split['file_name'].tolist())
+        
+        # Get patient list (just for the print message)
+        patient_count = len(df_this_split['patient_id'].unique())
+        # --- END NEW LOGIC ---
+
+        if not self.valid_files:
+            raise ValueError(f"No files found for split '{self.split}' in {split_file}")
+
+        # Gather all valid slices
+        self.slice_infos = self._collect_slices()
+
+        print(f"[{self.split.upper()}] Loaded {len(self.slice_infos)} slices from {patient_count} patients.")
+
+    def _collect_slices(self):
+        # This method is unchanged and works perfectly.
+        # "if file not in self.valid_files" is now very fast
+        # because self.valid_files is a set.
+        slice_info_list = []
+        for root_dir in self.cect_root_dirs:
+            for root, dirs, files in os.walk(root_dir):
+                if os.path.basename(root).endswith("mask_files"):
+                    continue
+                for file in files:
+                    if file not in self.valid_files:
+                        continue
+
+                    ct_path = os.path.join(root, file)
+                    mask_name = file.replace("ct", "mask")
+                    mask_path = os.path.join(self.mask_dir, mask_name)
+
+                    if not os.path.exists(mask_path):
+                        continue
+
+                    try:
+                        ct_img = nib.load(ct_path)
+                        mask_img = nib.load(mask_path)
+                        ct_shape = ct_img.shape
+                        mask_shape = mask_img.shape
+                    except Exception:
+                        continue
+
+                    if ct_shape[2] != mask_shape[2]:
+                        continue
+                    
+                    mask_data = mask_img.get_fdata()
+
+                    for z in range(ct_shape[2]):
+                        if np.any(mask_data[:, :, z]):
+                            slice_info_list.append((ct_path, mask_path, z))
+        return slice_info_list
+
+    def __len__(self):
+        return len(self.slice_infos)
+
+    def resize(self, img):
+        h, w = img.shape
+        return zoom(img, (self.output_size[0] / h, self.output_size[1] / w), order=1)
+
+    def __getitem__(self, idx):
+        ct_path, mask_path, slice_idx = self.slice_infos[idx]
+
+        ct = nib.load(ct_path).get_fdata()
+        mask = nib.load(mask_path).get_fdata()
+
+        if ct.ndim != 3:
+            if ct.ndim == 5:
+                ct = ct[:, :, :, 0, 0] 
+            elif ct.ndim == 4:
+                ct = ct[:, :, :, 0] 
+                
+        ct_slice = ct[:, :, slice_idx]
+        mask_slice = mask[:, :, slice_idx]
+
+        ct_slice = (ct_slice - np.mean(ct_slice)) / (np.std(ct_slice) + 1e-8)
+        mask_slice = (mask_slice > 0).astype(np.float32)
+
+        if self.augment:
+            if random.random() > 0.5:
+                ct_slice = np.flip(ct_slice, axis=0).copy()
+                mask_slice = np.flip(mask_slice, axis=0).copy()
+            if random.random() > 0.5:
+                ct_slice = np.flip(ct_slice, axis=1).copy()
+                mask_slice = np.flip(mask_slice, axis=1).copy()
+
+        if self.output_size:
+            ct_slice = self.resize(ct_slice)
+            mask_slice = self.resize(mask_slice)
+
+        ct_tensor = torch.tensor(ct_slice, dtype=torch.float32).unsqueeze(0)
+        mask_tensor = torch.tensor(mask_slice, dtype=torch.uint8) 
+
+        return {
+            "image": ct_tensor,
+            "label": mask_tensor,
+            "idx": idx
+        }
 
 class LiverTumorSliceDataset(Dataset):
     def __init__(self, 

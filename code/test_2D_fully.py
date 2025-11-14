@@ -13,7 +13,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from networks.net_factory import net_factory
-from dataloaders.dataset import LiverTumorSliceDataset
+from dataloaders.dataset import LiverTumorSliceDataset, LiverTumorSliceDatasetPatient
 from torch.utils.data import DataLoader
 
 parser = argparse.ArgumentParser()
@@ -201,6 +201,7 @@ def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
 def Inference(FLAGS):
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
+    patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
     cect_root_dirs = ["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
     mask_dir = "/kaggle/input/cect-liver-2/mask_files/mask_files"
 
@@ -209,18 +210,25 @@ def Inference(FLAGS):
     # swimunet
     # img_size = 224
 
-    db_test = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
+    # db_test = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="test",  # <--- use test split
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(img_size, img_size),
+    #     augment=False
+    # )
+
+    db_test = LiverTumorSliceDatasetPatient(
+        split_file=patient_csv_data,
+        split="test",                         
         cect_root_dirs=cect_root_dirs,
         mask_dir=mask_dir,
-        split="test",  # <--- use test split
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
         augment=False
     )
-
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
     snapshot_path = f"{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
