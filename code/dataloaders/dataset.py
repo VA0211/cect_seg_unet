@@ -133,7 +133,7 @@ class LiverTumorSliceDatasetPatient(Dataset):
 
     def resize(self, img):
         h, w = img.shape
-        return zoom(img, (self.output_size[0] / h, self.output_size[1] / w))
+        return zoom(img, (self.output_size[0] / h, self.output_size[1] / w), order=1)
 
     def __getitem__(self, idx):
         ct_path, mask_path, slice_idx = self.slice_infos[idx]
