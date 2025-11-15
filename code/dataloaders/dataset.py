@@ -36,6 +36,7 @@ class LiverTumorSliceDatasetPatient(Dataset):
                  split,                   # "train", "val", or "test"
                  cect_root_dirs,        
                  mask_dir,
+                 phase="P",              # <-- NEW PARAMETER (e.g., 'P', 'C1')
                  output_size=(256, 256),    
                  augment=True):
         
@@ -44,20 +45,36 @@ class LiverTumorSliceDatasetPatient(Dataset):
         self.output_size = output_size
         self.split = split.lower()
         self.augment = augment and self.split == "train"
+        self.phase = phase # <-- Store the phase
 
-        # --- NEW SIMPLIFIED LOGIC ---
         try:
             # Load the master split file
             all_splits_df = pd.read_csv(split_file)
         except FileNotFoundError:
-            raise FileNotFoundError(f"Master split file not found: {split_file}\n"
-                                    "Did you run create_file_splits.py?")
+            raise FileNotFoundError(f"Master split file not found: {split_file}")
         
         # Filter for the *current* split (e.g., 'train')
         df_this_split = all_splits_df[all_splits_df['split'] == self.split]
         
-        if df_this_split.empty:
-            print(f"Warning: No patients or files found for split '{self.split}' in {split_file}", file=sys.stderr)
+        # --- NEW FILTERING LOGIC ---
+        if self.phase is not None:
+            # Define extraction function
+            def get_phase_from_file(file_name):
+                try:
+                    return file_name.split('_ct_')[-1].split('.')[0]
+                except Exception:
+                    return None
+            
+            # Apply it to create a new 'phase' column
+            df_this_split = df_this_split.copy() # Avoid SettingWithCopyWarning
+            df_this_split['extracted_phase'] = df_this_split['file_name'].apply(get_phase_from_file)
+            
+            # Filter the dataframe for the specified phase
+            df_this_split = df_this_split[df_this_split['extracted_phase'] == self.phase]
+            
+            if df_this_split.empty:
+                print(f"Warning: No files found for split '{self.split}' and phase '{self.phase}'", file=sys.stderr)
+        # --- END NEW LOGIC ---
 
         # Create a set of all possible file name variations
         self.valid_files = set()
