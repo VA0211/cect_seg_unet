@@ -22,11 +22,17 @@ from scipy.ndimage import zoom
 from sklearn.model_selection import train_test_split
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
+import os
+import nibabel as nib
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+import random
+import sys
 
 class LiverTumorSliceDatasetPatient(Dataset):
     def __init__(self, 
-                 split_file,              # <-- NEW: Path to "file_splits.csv"
+                 split_file,              # Path to "patient_file_splits.csv"
                  split,                   # "train", "val", or "test"
                  cect_root_dirs,        
                  mask_dir,
@@ -50,16 +56,25 @@ class LiverTumorSliceDatasetPatient(Dataset):
         # Filter for the *current* split (e.g., 'train')
         df_this_split = all_splits_df[all_splits_df['split'] == self.split]
         
-        # Get the list of file names for this split
-        # Use a set for (much) faster lookups in _collect_slices
-        self.valid_files = set(df_this_split['file_name'].tolist())
+        if df_this_split.empty:
+            print(f"Warning: No patients or files found for split '{self.split}' in {split_file}", file=sys.stderr)
+
+        # Create a set of all possible file name variations
+        self.valid_files = set()
+        for f in df_this_split['file_name'].tolist():
+            self.valid_files.add(f)
+            if f.endswith('.nii.gz'):
+                # Add the .nii version
+                self.valid_files.add(f.replace('.nii.gz', '.nii'))
+            elif f.endswith('.nii'):
+                # Add the .nii.gz version
+                self.valid_files.add(f + '.gz')
         
         # Get patient list (just for the print message)
         patient_count = len(df_this_split['patient_id'].unique())
-        # --- END NEW LOGIC ---
 
         if not self.valid_files:
-            raise ValueError(f"No files found for split '{self.split}' in {split_file}")
+            print(f"Warning: No valid file names were processed for split '{self.split}'", file=sys.stderr)
 
         # Gather all valid slices
         self.slice_infos = self._collect_slices()
@@ -67,24 +82,33 @@ class LiverTumorSliceDatasetPatient(Dataset):
         print(f"[{self.split.upper()}] Loaded {len(self.slice_infos)} slices from {patient_count} patients.")
 
     def _collect_slices(self):
-        # This method is unchanged and works perfectly.
-        # "if file not in self.valid_files" is now very fast
-        # because self.valid_files is a set.
         slice_info_list = []
         for root_dir in self.cect_root_dirs:
             for root, dirs, files in os.walk(root_dir):
-                if os.path.basename(root).endswith("mask_files"):
+                # Skip mask-related directories
+                if "mask_files" in root.lower() or "liver_mask_files" in root.lower():
                     continue
+                    
                 for file in files:
+                    # This check will now work for both .nii and .nii.gz
                     if file not in self.valid_files:
                         continue
 
                     ct_path = os.path.join(root, file)
-                    mask_name = file.replace("ct", "mask")
-                    mask_path = os.path.join(self.mask_dir, mask_name)
+                    # Create mask name (works for both .nii and .nii.gz)
+                    mask_filename = file.replace("ct", "mask")
+                    mask_path = os.path.join(self.mask_dir, mask_filename)
 
                     if not os.path.exists(mask_path):
-                        continue
+                        # Try the other extension just in case
+                        if mask_path.endswith('.nii'):
+                            mask_path += '.gz'
+                        elif mask_path.endswith('.nii.gz'):
+                            mask_path = mask_path.replace('.nii.gz', '.nii')
+
+                        if not os.path.exists(mask_path):
+                            # print(f"Warning: Missing mask for {ct_path}")
+                            continue
 
                     try:
                         ct_img = nib.load(ct_path)
@@ -92,7 +116,7 @@ class LiverTumorSliceDatasetPatient(Dataset):
                         ct_shape = ct_img.shape
                         mask_shape = mask_img.shape
                     except Exception:
-                        continue
+                        continue # Skip corrupted files
 
                     if ct_shape[2] != mask_shape[2]:
                         continue
@@ -109,24 +133,34 @@ class LiverTumorSliceDatasetPatient(Dataset):
 
     def resize(self, img):
         h, w = img.shape
-        return zoom(img, (self.output_size[0] / h, self.output_size[1] / w), order=1)
+        return zoom(img, (self.output_size[0] / h, self.output_size[1] / w))
 
     def __getitem__(self, idx):
         ct_path, mask_path, slice_idx = self.slice_infos[idx]
 
-        ct = nib.load(ct_path).get_fdata()
-        mask = nib.load(mask_path).get_fdata()
+        try:
+            # FIX 1: Cast to float32 immediately to solve dtype=object error
+            ct = nib.load(ct_path).get_fdata().astype(np.float32)
+            mask = nib.load(mask_path).get_fdata().astype(np.uint8) 
+        except Exception as e:
+            print(f"Error loading file: {ct_path} or {mask_path}")
+            raise e
 
+        # Handle 4D/5D scans
         if ct.ndim != 3:
             if ct.ndim == 5:
                 ct = ct[:, :, :, 0, 0] 
             elif ct.ndim == 4:
                 ct = ct[:, :, :, 0] 
-                
+            ct = ct.astype(np.float32) # Ensure cast is maintained
+
         ct_slice = ct[:, :, slice_idx]
         mask_slice = mask[:, :, slice_idx]
 
+        # Normalize
         ct_slice = (ct_slice - np.mean(ct_slice)) / (np.std(ct_slice) + 1e-8)
+        
+        # Binarize
         mask_slice = (mask_slice > 0).astype(np.float32)
 
         if self.augment:
@@ -137,12 +171,13 @@ class LiverTumorSliceDatasetPatient(Dataset):
                 ct_slice = np.flip(ct_slice, axis=1).copy()
                 mask_slice = np.flip(mask_slice, axis=1).copy()
 
+        # FIX 2: Use correct resize order for mask
         if self.output_size:
             ct_slice = self.resize(ct_slice)
             mask_slice = self.resize(mask_slice)
 
         ct_tensor = torch.tensor(ct_slice, dtype=torch.float32).unsqueeze(0)
-        mask_tensor = torch.tensor(mask_slice, dtype=torch.uint8) 
+        mask_tensor = torch.tensor(mask_slice.astype(np.uint8), dtype=torch.uint8) 
 
         return {
             "image": ct_tensor,
