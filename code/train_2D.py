@@ -21,7 +21,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset, LiverTumorSliceDatasetPatient
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset, LiverTumorSliceDatasetPatient, LiverTumorPatientSliceDataset
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
@@ -101,21 +101,26 @@ def train(args, snapshot_path):
     #     augment=False
     # )
 
-    db_train = LiverTumorSliceDatasetPatient(
-        split_file=patient_csv_data,
-        split="train",                         
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        augment=True
-    )
+    # db_train = LiverTumorSliceDatasetPatient(
+    #     split_file=patient_csv_data,
+    #     split="train",                         
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     augment=True
+    # )
 
-    db_val = LiverTumorSliceDatasetPatient(
-        split_file=patient_csv_data,
-        split="val",                         
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        augment=False
-    )
+    # db_val = LiverTumorSliceDatasetPatient(
+    #     split_file=patient_csv_data,
+    #     split="val",                         
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     augment=False
+    # )
+    csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    db_train = LiverTumorSliceDataset(csv_file, split="train", augment=True)
+    print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
+    db_val   = LiverTumorSliceDataset(csv_file, split="val", augment=False)
+    print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)

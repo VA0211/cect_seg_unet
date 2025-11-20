@@ -30,6 +30,161 @@ from torch.utils.data import Dataset
 import random
 import sys
 
+class LiverTumorPatientSliceDataset(Dataset):
+    def __init__(self, 
+                 metadata_csv, 
+                 split="train",             # "train", "val", or "test"
+                 val_ratio=0.2,             # % of training set for validation
+                 test_ratio=0.1,            # % of total data for testing
+                 random_seed=42,
+                 output_size=(256, 256),
+                 augment=True):
+        
+        self.split = split.lower()
+        self.output_size = output_size
+        self.augment = augment
+        
+        # 1. Load Metadata
+        df = pd.read_csv(metadata_csv)
+        
+        # 2. STRICT CLEANING (Matching your manual check)
+        # Only keep rows where mask_path is a valid string
+        df = df[df['mask_path'].apply(lambda x: isinstance(x, str) and len(x) > 0)]
+        
+        # 3. Patient-Level Split (Only on patients who actually have masks)
+        unique_patients = sorted(df['patient_id'].unique()) # Sort ensures reproducibility
+        
+        train_ids, test_ids = train_test_split(
+            unique_patients, 
+            test_size=test_ratio, 
+            random_state=random_seed
+        )
+        
+        # Split remaining train_ids into actual train and val
+        # Correct math: If we want 20% val ratio, it applies to the remaining 90%
+        val_size_adjusted = val_ratio / (1.0 - test_ratio)
+        train_ids, val_ids = train_test_split(
+            train_ids, 
+            test_size=val_size_adjusted, 
+            random_state=random_seed
+        )
+
+        # Select ID list based on split
+        if self.split == 'train':
+            self.target_ids = train_ids
+        elif self.split == 'val':
+            self.target_ids = val_ids
+        elif self.split == 'test':
+            self.target_ids = test_ids
+        else:
+            raise ValueError("Split must be 'train', 'val', or 'test'")
+            
+        # Filter DataFrame to only this split's patients
+        self.df_split = df[df['patient_id'].isin(self.target_ids)].copy()
+        
+        # 4. Collect Slices
+        # We run the collection logic immediately to populate the index
+        self.slice_infos = self._collect_slices()
+        
+        # Print Stats
+        print(f"[{self.split.upper()}] Patients: {len(self.target_ids)} | Slices: {len(self.slice_infos)}")
+
+    def _collect_slices(self):
+        slice_info_list = []
+        
+        # Iterate rows in this split
+        for _, row in self.df_split.iterrows():
+            ct_path = row['ct_path']
+            mask_path = row['mask_path']
+            
+            try:
+                # Fast Load: We rely on the mask to find valid slices
+                mask_proxy = nib.load(mask_path)
+                
+                # Get data (this reads from disk)
+                # Optimization: If your NII files are huge, this is the bottleneck.
+                mask_data = mask_proxy.get_fdata()
+                
+                # Logic from your manual check:
+                # Collapse H,W to check if any pixel in the slice is > 0
+                # axis=(0,1) means we look at the XY plane for each Z
+                tumor_slices = np.any(mask_data > 0, axis=(0, 1))
+                
+                # Get indices where True
+                valid_z_indices = np.where(tumor_slices)[0]
+                
+                for z in valid_z_indices:
+                    slice_info_list.append({
+                        'ct_path': ct_path,
+                        'mask_path': mask_path,
+                        'slice_idx': int(z)
+                    })
+                    
+            except Exception as e:
+                print(f"Error reading {mask_path}: {e}")
+                continue
+                
+        return slice_info_list
+
+    def __len__(self):
+        return len(self.slice_infos)
+
+    def resize(self, img):
+        h, w = img.shape
+        zoom_factor = (self.output_size[0] / h, self.output_size[1] / w)
+        return zoom(img, zoom_factor, order=1)
+
+    def __getitem__(self, idx):
+        info = self.slice_infos[idx]
+        ct_path = info['ct_path']
+        mask_path = info['mask_path']
+        slice_idx = info['slice_idx']
+
+        # Load specific slice from volume
+        # Note: nibabel caches, but loading full volume every time is slow.
+        # Ideally, convert data to .npy 2D slices offline for speed.
+        ct_vol = nib.load(ct_path).dataobj
+        mask_vol = nib.load(mask_path).dataobj
+        
+        # Use slicing to read only needed data if supported, otherwise loads all
+        ct_slice = np.array(ct_vol[:, :, slice_idx]).astype(np.float32)
+        mask_slice = np.array(mask_vol[:, :, slice_idx]).astype(np.float32)
+
+        # Handle 4D data (H, W, 1) -> (H, W)
+        if ct_slice.ndim > 2: ct_slice = ct_slice.squeeze()
+        if mask_slice.ndim > 2: mask_slice = mask_slice.squeeze()
+
+        # Normalize
+        mean = np.mean(ct_slice)
+        std = np.std(ct_slice)
+        ct_slice = (ct_slice - mean) / (std + 1e-8)
+        
+        # Binarize Mask
+        mask_slice = (mask_slice > 0).astype(np.float32)
+
+        # Augmentation (Train only)
+        if self.augment and self.split == "train":
+            if random.random() > 0.5: # Vertical
+                ct_slice = np.flip(ct_slice, axis=0).copy()
+                mask_slice = np.flip(mask_slice, axis=0).copy()
+            if random.random() > 0.5: # Horizontal
+                ct_slice = np.flip(ct_slice, axis=1).copy()
+                mask_slice = np.flip(mask_slice, axis=1).copy()
+
+        # Resize
+        if self.output_size:
+            ct_slice = self.resize(ct_slice)
+            mask_slice = self.resize(mask_slice)
+
+        ct_tensor = torch.from_numpy(ct_slice).unsqueeze(0).float() # (1, H, W)
+        mask_tensor = torch.from_numpy(mask_slice).long()           # (H, W)
+
+        return {
+            "image": ct_tensor,
+            "label": mask_tensor,
+            "idx": idx
+        }
+    
 class LiverTumorSliceDatasetPatient(Dataset):
     def __init__(self, 
                  split_file,              # Path to "patient_file_splits.csv"

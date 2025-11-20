@@ -222,13 +222,18 @@ def Inference(FLAGS):
     #     augment=False
     # )
 
-    db_test = LiverTumorSliceDatasetPatient(
-        split_file=patient_csv_data,
-        split="test",                         
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        augment=False
-    )
+    # db_test = LiverTumorSliceDatasetPatient(
+    #     split_file=patient_csv_data,
+    #     split="test",                         
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     augment=False
+    # )
+
+    csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    db_test   = LiverTumorSliceDataset(csv_file, split="test", augment=False)
+    print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
+
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
     snapshot_path = f"{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
