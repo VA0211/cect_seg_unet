@@ -117,10 +117,12 @@ def train(args, snapshot_path):
     #     augment=False
     # )
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    print("PROCESSING TRAIN SET...")
     db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
-    print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
+    # print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
+    print("PROCESSING VAL SET...")
     db_val   = LiverTumorPatientSliceDataset(csv_file, split="val", augment=False)
-    print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
+    # print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)

@@ -47,7 +47,7 @@ class LiverTumorPatientSliceDataset(Dataset):
         # 1. Load Metadata
         df = pd.read_csv(metadata_csv)
         
-        # 2. STRICT CLEANING (Matching your manual check)
+        # 2. STRICT CLEANING (Matching  manual check)
         # Only keep rows where mask_path is a valid string
         df = df[df['mask_path'].apply(lambda x: isinstance(x, str) and len(x) > 0)]
         
@@ -102,10 +102,10 @@ class LiverTumorPatientSliceDataset(Dataset):
                 mask_proxy = nib.load(mask_path)
                 
                 # Get data (this reads from disk)
-                # Optimization: If your NII files are huge, this is the bottleneck.
+                # Optimization: If  NII files are huge, this is the bottleneck.
                 mask_data = mask_proxy.get_fdata()
                 
-                # Logic from your manual check:
+                # Logic from  manual check:
                 # Collapse H,W to check if any pixel in the slice is > 0
                 # axis=(0,1) means we look at the XY plane for each Z
                 tumor_slices = np.any(mask_data > 0, axis=(0, 1))
@@ -130,6 +130,15 @@ class LiverTumorPatientSliceDataset(Dataset):
         return len(self.slice_infos)
 
     def resize(self, img):
+        # --- Fix: Safety check for dimensions ---
+        # If image is (H, W, 1), squeeze it to (H, W)
+        if img.ndim == 3:
+            img = np.squeeze(img)
+            
+        # Double check it is now 2D
+        if img.ndim != 2:
+            raise ValueError(f"Image shape invalid for resize: {img.shape}")
+
         h, w = img.shape
         zoom_factor = (self.output_size[0] / h, self.output_size[1] / w)
         return zoom(img, zoom_factor, order=1)

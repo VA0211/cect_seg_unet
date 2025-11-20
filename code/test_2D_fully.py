@@ -231,8 +231,9 @@ def Inference(FLAGS):
     # )
 
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    print("PROCESSING TEST SET...")
     db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
-    print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
+    # print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
 
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
 
