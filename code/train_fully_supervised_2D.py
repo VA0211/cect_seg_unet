@@ -21,7 +21,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset
+from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset, NpyDataset
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
@@ -67,6 +67,7 @@ def train(args, snapshot_path):
     batch_size = args.batch_size
     max_iterations = args.max_iterations
 
+    img_size = 256
     # labeled_slice = patients_to_slices(args.root_path, args.labeled_num)
 
     model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes)
@@ -80,30 +81,40 @@ def train(args, snapshot_path):
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     # Train set
-    db_train = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="train",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(256, 256),
-        augment=True
-    )
+    # db_train = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="train",
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(256, 256),
+    #     augment=True
+    # )
 
-    # Validation set
-    db_val = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="val",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(256, 256),
-        augment=False
-    )
+    # # Validation set
+    # db_val = LiverTumorSliceDataset(
+    #     metadata_csv=csv_data,
+    #     cect_root_dirs=cect_root_dirs,
+    #     mask_dir=mask_dir,
+    #     split="val",
+    #     val_ratio=0.2,
+    #     test_ratio=0.1,
+    #     random_seed=42,
+    #     output_size=(256, 256),
+    #     augment=False
+    # )
+
+    data_root = '/kaggle/input/cect-npy-full/npy_dataset'
+    print("PROCESSING TRAIN SET...")
+    # db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
+    db_train = NpyDataset(data_root, split='train', augment=True, output_size=(img_size, img_size))
+    # print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
+    print("PROCESSING VAL SET...")
+    # db_val   = LiverTumorPatientSliceDataset(csv_file, split="val", augment=False)
+    db_val = NpyDataset(data_root, split='val', augment=False, output_size=(img_size, img_size))
+    # print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)
