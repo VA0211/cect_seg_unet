@@ -30,6 +30,84 @@ from torch.utils.data import Dataset
 import random
 import sys
 
+
+class NpyDataset(Dataset):
+    def __init__(self, data_root, split="train", augment=True, output_size=(256, 256)):
+        """
+        data_root: path to the 'processed_dataset' folder
+        split: 'train', 'val', or 'test'
+        augment: Whether to apply data augmentation
+        output_size: Target size (H, W) to resize the loaded slices
+        """
+        self.data_root = data_root
+        self.split = split
+        self.augment = augment
+        self.output_size = output_size
+        
+        self.image_dir = os.path.join(data_root, "images")
+        self.mask_dir = os.path.join(data_root, "masks")
+        
+        # Get all files
+        all_files = sorted(os.listdir(self.image_dir))
+        
+        # Filter by split
+        self.file_list = [f for f in all_files if f.startswith(self.split)]
+        
+        print(f"[{split.upper()}] Loaded {len(self.file_list)} pre-processed slices.")
+
+    def __len__(self):
+        return len(self.file_list)
+
+    def resize(self, img):
+        """Resize logic moved here from the original dataset class"""
+        if img.ndim != 2:
+             raise ValueError(f"Image shape invalid for resize: {img.shape}")
+        
+        h, w = img.shape
+        # If already the correct size, skip
+        if self.output_size is not None and (h != self.output_size[0] or w != self.output_size[1]):
+            zoom_factor = (self.output_size[0] / h, self.output_size[1] / w)
+            # order=1 (bilinear) is standard for images and masks (if masks are float)
+            return zoom(img, zoom_factor, order=1)
+        return img
+
+    def __getitem__(self, idx):
+        filename = self.file_list[idx]
+        
+        # Load numpy files
+        img_path = os.path.join(self.image_dir, filename)
+        mask_path = os.path.join(self.mask_dir, filename)
+        
+        img_slice = np.load(img_path) 
+        mask_slice = np.load(mask_path)
+        
+        # Ensure mask is float32 for consistent resizing/interpolation behavior
+        mask_slice = mask_slice.astype(np.float32)
+        
+        # 1. Apply Augmentation (on original resolution)
+        if self.augment and self.split == "train":
+            if np.random.random() > 0.5:
+                img_slice = np.flip(img_slice, axis=0).copy()
+                mask_slice = np.flip(mask_slice, axis=0).copy()
+            if np.random.random() > 0.5:
+                img_slice = np.flip(img_slice, axis=1).copy()
+                mask_slice = np.flip(mask_slice, axis=1).copy()
+        
+        # 2. Apply Resize (to target input size)
+        if self.output_size is not None:
+            img_slice = self.resize(img_slice)
+            mask_slice = self.resize(mask_slice)
+        
+        # Convert to Tensor
+        # Mask is converted to Long (int64) for CrossEntropyLoss
+        ct_tensor = torch.from_numpy(img_slice).unsqueeze(0).float()
+        mask_tensor = torch.from_numpy(mask_slice).long()
+
+        return {
+            "image": ct_tensor,
+            "label": mask_tensor
+        }
+    
 class LiverTumorPatientSliceDataset(Dataset):
     def __init__(self, 
                  metadata_csv, 

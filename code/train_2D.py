@@ -21,7 +21,7 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from dataloaders import utils
-from dataloaders.dataset import BaseDataSets, RandomGenerator, BaseDataSets_Synapse, LiverTumorSliceDataset, LiverTumorSliceDatasetPatient, LiverTumorPatientSliceDataset
+from dataloaders.dataset import LiverTumorSliceDataset, LiverTumorSliceDatasetPatient, LiverTumorPatientSliceDataset, NpyDataset
 from networks.net_factory import net_factory
 from utils import losses, metrics, ramps
 from val_2D import test_single_volume, test_single_volume_ds
@@ -117,11 +117,14 @@ def train(args, snapshot_path):
     #     augment=False
     # )
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    data_root = '/kaggle/input/cect-npy/processed_dataset'
     print("PROCESSING TRAIN SET...")
-    db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
+    # db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
+    db_train = NpyDataset(data_root, split='train', augment=True, output_size=(img_size, img_size))
     # print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
     print("PROCESSING VAL SET...")
-    db_val   = LiverTumorPatientSliceDataset(csv_file, split="val", augment=False)
+    # db_val   = LiverTumorPatientSliceDataset(csv_file, split="val", augment=False)
+    db_val = NpyDataset(data_root, split='val', augment=False, output_size=(img_size, img_size))
     # print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
 
     def worker_init_fn(worker_id):

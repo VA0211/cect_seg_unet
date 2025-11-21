@@ -13,7 +13,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from networks.net_factory import net_factory
-from dataloaders.dataset import LiverTumorSliceDataset, LiverTumorSliceDatasetPatient, LiverTumorPatientSliceDataset
+from dataloaders.dataset import LiverTumorSliceDataset, LiverTumorSliceDatasetPatient, LiverTumorPatientSliceDataset, NpyDataset
 from torch.utils.data import DataLoader
 
 parser = argparse.ArgumentParser()
@@ -231,8 +231,10 @@ def Inference(FLAGS):
     # )
 
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    data_root = '/kaggle/input/cect-npy/processed_dataset'
     print("PROCESSING TEST SET...")
-    db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
+    # db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
+    db_test = NpyDataset(data_root, split='test', augment=False, output_size=(img_size, img_size))
     # print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
 
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
