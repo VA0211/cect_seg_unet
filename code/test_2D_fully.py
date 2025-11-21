@@ -231,7 +231,7 @@ def Inference(FLAGS):
     # )
 
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
-    data_root = '/kaggle/input/cect-npy/processed_dataset'
+    data_root = '/kaggle/input/cect-npy-full/npy_dataset'
     print("PROCESSING TEST SET...")
     # db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
     db_test = NpyDataset(data_root, split='test', augment=False, output_size=(img_size, img_size))

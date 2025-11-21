@@ -117,7 +117,7 @@ def train(args, snapshot_path):
     #     augment=False
     # )
     csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
-    data_root = '/kaggle/input/cect-npy/processed_dataset'
+    data_root = '/kaggle/input/cect-npy-full/npy_dataset'
     print("PROCESSING TRAIN SET...")
     # db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
     db_train = NpyDataset(data_root, split='train', augment=True, output_size=(img_size, img_size))
