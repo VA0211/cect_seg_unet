@@ -32,15 +32,17 @@ import sys
 
 
 class NpyDataset(Dataset):
-    def __init__(self, data_root, split="train", augment=True, output_size=(256, 256)):
+    def __init__(self, data_root, split="train", phase=None, augment=True, output_size=(256, 256)):
         """
         data_root: path to the 'processed_dataset' folder
         split: 'train', 'val', or 'test'
+        phase: Specific phase to filter ['P', 'C1', 'C2', 'C3']. If None, loads all.
         augment: Whether to apply data augmentation
         output_size: Target size (H, W) to resize the loaded slices
         """
         self.data_root = data_root
         self.split = split
+        self.phase = phase
         self.augment = augment
         self.output_size = output_size
         
@@ -50,10 +52,33 @@ class NpyDataset(Dataset):
         # Get all files
         all_files = sorted(os.listdir(self.image_dir))
         
-        # Filter by split
-        self.file_list = [f for f in all_files if f.startswith(self.split)]
+        # 2. Filter the file list based on Split AND Phase
+        self.file_list = []
         
-        print(f"[{split.upper()}] Loaded {len(self.file_list)} pre-processed slices.")
+        for f in all_files:
+            # Format: {split}_{patient_id}_{phase}_{slice}.npy
+            parts = f.split('_')
+            
+            # Basic safety check for filename format
+            if len(parts) < 4: 
+                continue
+
+            file_split = parts[0] # e.g., 'train'
+            file_phase = parts[2] # e.g., 'C1', 'P', etc.
+            
+            # A. Filter by Split (train/val/test)
+            if file_split != self.split:
+                continue
+                
+            # B. Filter by Phase (P/C1/C2/C3)
+            if self.phase is not None:
+                if file_phase != self.phase:
+                    continue
+            
+            # If it passes both checks, add to list
+            self.file_list.append(f)
+
+        print(f"[{split.upper()}] Phase: {phase if phase else 'ALL'} | Found {len(self.file_list)} slices.")
 
     def __len__(self):
         return len(self.file_list)
@@ -86,9 +111,6 @@ class NpyDataset(Dataset):
         
         # 1. Apply Augmentation (on original resolution)
         if self.augment and self.split == "train":
-            if np.random.random() > 0.5:
-                img_slice = np.flip(img_slice, axis=0).copy()
-                mask_slice = np.flip(mask_slice, axis=0).copy()
             if np.random.random() > 0.5:
                 img_slice = np.flip(img_slice, axis=1).copy()
                 mask_slice = np.flip(mask_slice, axis=1).copy()
