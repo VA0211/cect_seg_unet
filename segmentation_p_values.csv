@@ -1,0 +1,5 @@
+Comparison Model,Mean Dice,Diff from Baseline,P-Value,Significant? (p<0.05)
+UNet3+ ResNet50 SE,0.747,0.0006,0.1448,NO
+UNet3+ ResNet50 CBAM,0.7552,0.0088,0.2872,NO
+UNet3+ ResNet50 CBAM ASPP,0.7532,0.0068,0.6923,NO
+UNet3+ ResNet50 ASPP,0.7346,-0.0118,0.0005,YES

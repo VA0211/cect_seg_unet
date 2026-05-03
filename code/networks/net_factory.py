@@ -6,6 +6,7 @@ from networks.unet3plus import Resnet50_Unet3plus, MambaUNet3plus, Transformer_U
 import argparse
 from networks.vision_transformer import SwinUnet as ViT_seg
 from networks.vision_mamba import MambaUnet as VIM_seg
+from networks.sts_net  import STSNet
 from networks.config import get_config
 from networks.nnunet import initialize_network
 
@@ -110,6 +111,8 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
         net = Transformer_UNet3plus().cuda()
     elif net_type == "unet3plus_resnet_attn":
         net = Resnet50_Unet3plus_attn().cuda()
+    elif net_type == "sts_net":
+        net = STSNet().cuda()
     else:
         net = None
     return net

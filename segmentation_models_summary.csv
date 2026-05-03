@@ -1,0 +1,6 @@
+Model,Dice,HD95,IoU,Accuracy,Precision,Sensitivity,Specificity
+unet3plus_resnet_test_results,0.746 ± 0.284,88.08 ± 272.54,0.657 ± 0.275,0.915 ± 0.274,0.764 ± 0.287,0.768 ± 0.302,0.916 ± 0.274
+unet3plus_resnet_attn_se_test_results,0.747 ± 0.288,99.93 ± 290.06,0.659 ± 0.276,0.903 ± 0.291,0.767 ± 0.289,0.761 ± 0.306,0.904 ± 0.292
+unet3plus_resnet_attn_cbam_test_results,0.755 ± 0.268,77.91 ± 256.41,0.662 ± 0.261,0.925 ± 0.257,0.768 ± 0.273,0.777 ± 0.288,0.926 ± 0.258
+unet3plus_resnet_attn_cbam_aspp_test_results,0.753 ± 0.275,90.32 ± 276.85,0.662 ± 0.265,0.912 ± 0.278,0.777 ± 0.281,0.761 ± 0.291,0.914 ± 0.278
+unet3plus_resnet_attn_aspp_test_results,0.735 ± 0.295,106.10 ± 297.47,0.645 ± 0.282,0.897 ± 0.299,0.756 ± 0.298,0.754 ± 0.312,0.898 ± 0.299

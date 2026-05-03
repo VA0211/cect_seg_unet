@@ -67,7 +67,7 @@ def train(args, snapshot_path):
 
     csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
     patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
-    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
+    cect_root_dirs=["/kaggle/input/cect-liver", "/kaggle/input/cect-liver-2"]
     mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
 
     # unet, mamabunet
