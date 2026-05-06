@@ -58,6 +58,48 @@ class CBAM(nn.Module):
         x = x * sa
         return x
 
+class MCBAM(nn.Module):
+    def __init__(self, channels, reduction=16):
+        super(MCBAM, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc1 = nn.Conv2d(channels, channels // reduction, kernel_size=1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Conv2d(channels // reduction, channels, kernel_size=1, bias=False)
+        self.sigmoid_channel = nn.Sigmoid()
+
+        self.spatial_conv = nn.Conv2d(3, 1, kernel_size=7, stride=1, padding=3, bias=False)
+        self.sigmoid_spatial = nn.Sigmoid()
+
+    def split_channel(self, x):
+        H, W = x.size(2), x.size(3)
+        h_mid, w_mid = H // 2, W // 2
+        return [
+            x[:, :, :h_mid, :w_mid],
+            x[:, :, :h_mid, w_mid:],
+            x[:, :, h_mid:, :w_mid],
+            x[:, :, h_mid:, w_mid:]
+        ]
+
+    def split_spatial(self, x):
+        C = x.size(1)
+        split = [C // 3, C // 3, C - 2 * (C // 3)]
+        return torch.split(x, split, dim=1)
+
+    def forward(self, x):
+        # Channel Attention
+        splits = self.split_channel(x)
+        channel_att = sum(self.fc2(self.relu(self.fc1(self.avg_pool(s)))) for s in splits)
+        channel_att = self.sigmoid_channel(channel_att)
+        x = x * channel_att
+
+        # Spatial Attention
+        splits = self.split_spatial(x)
+        avg_maps = [torch.mean(s, dim=1, keepdim=True) for s in splits]
+        spatial_att = self.sigmoid_spatial(self.spatial_conv(torch.cat(avg_maps, dim=1)))
+        x = x * spatial_att
+
+        return x
+    
 # -------------------------
 # ConvBlock with optional attention
 # -------------------------
@@ -75,6 +117,8 @@ class ConvBlock(nn.Module):
             self.attn = SEBlock(out_ch, reduction=reduction)
         elif attn.lower() == "cbam":
             self.attn = CBAM(out_ch, reduction=reduction)
+        elif attn.lower() == "mcbam":
+            self.attn = MCBAM(out_ch, reduction=reduction)
         else:
             raise("Error!!! Not found", attn)
 
