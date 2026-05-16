@@ -65,10 +65,10 @@ def train(args, snapshot_path):
     # model = MambaUNet3plus().cuda()
     model = net_factory(net_type=args.model)
 
-    csv_data = '/kaggle/input/cect-liver-2/file_check.csv'
+    csv_data = '/kaggle/input/datasets/noaanhldv1203/cect-liver-2/file_check.csv'
     patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
-    cect_root_dirs=["/kaggle/input/cect-liver-1", "/kaggle/input/cect-liver-2"]
-    mask_dir="/kaggle/input/cect-liver-2/mask_files/mask_files"
+    cect_root_dirs=["/kaggle/input/datasets/noaanhldv1203/cect-liver-1", "/kaggle/input/datasets/noaanhldv1203/cect-liver-2"]
+    mask_dir="/kaggle/input/datasets/noaanhldv1203/cect-liver-2/mask_files/mask_files"
 
     # unet, mamabunet
     img_size = 256
