@@ -210,17 +210,17 @@ def Inference(FLAGS):
     # swimunet
     # img_size = 224
 
-    # db_test = LiverTumorSliceDataset(
-    #     metadata_csv=csv_data,
-    #     cect_root_dirs=cect_root_dirs,
-    #     mask_dir=mask_dir,
-    #     split="test",  # <--- use test split
-    #     val_ratio=0.2,
-    #     test_ratio=0.1,
-    #     random_seed=42,
-    #     output_size=(img_size, img_size),
-    #     augment=False
-    # )
+    db_test = LiverTumorSliceDataset(
+        metadata_csv=csv_data,
+        cect_root_dirs=cect_root_dirs,
+        mask_dir=mask_dir,
+        split="test",  # <--- use test split
+        val_ratio=0.2,
+        test_ratio=0.1,
+        random_seed=42,
+        output_size=(img_size, img_size),
+        augment=False
+    )
 
     # db_test = LiverTumorSliceDatasetPatient(
     #     split_file=patient_csv_data,
@@ -230,11 +230,11 @@ def Inference(FLAGS):
     #     augment=False
     # )
 
-    csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
-    data_root = '/kaggle/input/cect-npy-full/npy_dataset'
-    print("PROCESSING TEST SET...")
+    # csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
+    # data_root = '/kaggle/input/cect-npy-full/npy_dataset'
+    # print("PROCESSING TEST SET...")
     # db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
-    db_test = NpyDataset(data_root, split='test', augment=False, output_size=(img_size, img_size))
+    # db_test = NpyDataset(data_root, split='test', augment=False, output_size=(img_size, img_size))
     # print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
 
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
