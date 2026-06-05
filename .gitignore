@@ -1,3 +1,5 @@
-/LICENSE
+__pycache__/
+code/tmp/
 /pdf
-/README.md
+/tmp
+/data
