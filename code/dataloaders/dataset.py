@@ -32,7 +32,7 @@ import sys
 
 
 class NpyDataset(Dataset):
-    def __init__(self, data_root, split="train", phase=None, augment=True, output_size=(256, 256)):
+    def __init__(self, data_root, split="train", phase=None, augment=True, output_size=(256, 256), vflip=True):
         """
         data_root: path to the 'processed_dataset' folder
         split: 'train', 'val', or 'test'
@@ -43,6 +43,7 @@ class NpyDataset(Dataset):
         self.data_root = data_root
         self.split = split
         self.phase = phase
+        self.vflip = vflip
         self.augment = augment
         self.output_size = output_size
         
@@ -83,7 +84,7 @@ class NpyDataset(Dataset):
     def __len__(self):
         return len(self.file_list)
 
-    def resize(self, img):
+    def resize(self, img, order=1):
         """Resize logic moved here from the original dataset class"""
         if img.ndim != 2:
              raise ValueError(f"Image shape invalid for resize: {img.shape}")
@@ -92,8 +93,8 @@ class NpyDataset(Dataset):
         # If already the correct size, skip
         if self.output_size is not None and (h != self.output_size[0] or w != self.output_size[1]):
             zoom_factor = (self.output_size[0] / h, self.output_size[1] / w)
-            # order=1 (bilinear) is standard for images and masks (if masks are float)
-            return zoom(img, zoom_factor, order=1)
+            # bilinear for images, nearest neighbour for masks (keeps labels binary)
+            return zoom(img, zoom_factor, order=order)
         return img
 
     def __getitem__(self, idx):
@@ -103,7 +104,7 @@ class NpyDataset(Dataset):
         img_path = os.path.join(self.image_dir, filename)
         mask_path = os.path.join(self.mask_dir, filename)
         
-        img_slice = np.load(img_path) 
+        img_slice = np.load(img_path).astype(np.float32)  # npy images are float16; scipy zoom needs float32
         mask_slice = np.load(mask_path)
         
         # Ensure mask is float32 for consistent resizing/interpolation behavior
@@ -111,14 +112,17 @@ class NpyDataset(Dataset):
         
         # 1. Apply Augmentation (on original resolution)
         if self.augment and self.split == "train":
+            if self.vflip and np.random.random() > 0.5:
+                img_slice = np.flip(img_slice, axis=0).copy()
+                mask_slice = np.flip(mask_slice, axis=0).copy()
             if np.random.random() > 0.5:
                 img_slice = np.flip(img_slice, axis=1).copy()
                 mask_slice = np.flip(mask_slice, axis=1).copy()
         
         # 2. Apply Resize (to target input size)
         if self.output_size is not None:
-            img_slice = self.resize(img_slice)
-            mask_slice = self.resize(mask_slice)
+            img_slice = self.resize(img_slice, order=1)
+            mask_slice = self.resize(mask_slice, order=0)
         
         # Convert to Tensor
         # Mask is converted to Long (int64) for CrossEntropyLoss

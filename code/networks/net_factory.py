@@ -71,11 +71,11 @@ parser.add_argument('--consistency', type=float,
                     default=0.1, help='consistency')
 parser.add_argument('--consistency_rampup', type=float,
                     default=200.0, help='consistency_rampup')
-args = parser.parse_args()
+args, _ = parser.parse_known_args()
 config = get_config(args)
 
 
-def net_factory(net_type="unet", in_chns=1, class_num=4):
+def net_factory(net_type="unet", in_chns=1, class_num=4, decoder_attn=None, apply_aspp=False):
     if net_type == "unet":
         net = UNet(in_chns=in_chns, class_num=class_num).cuda()
     elif net_type == "enet":
@@ -110,7 +110,7 @@ def net_factory(net_type="unet", in_chns=1, class_num=4):
     elif net_type == "trans_unet3plus":
         net = Transformer_UNet3plus().cuda()
     elif net_type == "unet3plus_resnet_attn":
-        net = Resnet50_Unet3plus_attn().cuda()
+        net = Resnet50_Unet3plus_attn(decoder_attn=decoder_attn, apply_aspp=apply_aspp).cuda()
     elif net_type == "sts_net":
         net = STSNet().cuda()
     else:

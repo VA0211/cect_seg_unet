@@ -50,7 +50,19 @@ parser.add_argument('--patch_size', type=list,  default=[256, 256],
 parser.add_argument('--seed', type=int,  default=1337, help='random seed')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
-args = parser.parse_args()
+parser.add_argument('--data_root', type=str, default='/kaggle/input/cect-npy-full/npy_dataset',
+                    help='patient-level npy dataset ({split}_{patient}_{phase}_{slice}.npy)')
+parser.add_argument('--img_size', type=int, default=256,
+                    help='network input size (224 for Swin-based models)')
+parser.add_argument('--eval_size', type=int, default=256,
+                    help='resolution at which validation metrics are computed')
+parser.add_argument('--decoder_attn', type=str, default='none',
+                    help='unet3plus_resnet_attn only: none | se | cbam | mcbam')
+parser.add_argument('--aspp', type=int, default=0,
+                    help='unet3plus_resnet_attn only: 1 to apply ASPP at the bottleneck')
+parser.add_argument('--vflip', type=int, default=1,
+                    help='1: random vertical + horizontal flips, 0: horizontal flip only')
+args, _ = parser.parse_known_args()
 
 
 def train(args, snapshot_path):
@@ -63,69 +75,28 @@ def train(args, snapshot_path):
 
     # model = Resnet50_Unet3plus((IMG_H, IMG_W, 1)).cuda()
     # model = MambaUNet3plus().cuda()
-    model = net_factory(net_type=args.model)
+    attn = None if args.decoder_attn.lower() == 'none' else args.decoder_attn
+    model = net_factory(net_type=args.model, in_chns=1, class_num=num_classes,
+                        decoder_attn=attn, apply_aspp=bool(args.aspp))
+    if args.model == "swinunet":
+        from networks.net_factory import config as swin_config
+        model.load_from(swin_config)  # ImageNet-pretrained Swin-T weights
 
-    csv_data = '/kaggle/input/datasets/noaanhldv1203/cect-liver-2/file_check.csv'
-    patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
-    cect_root_dirs=["/kaggle/input/datasets/noaanhldv1203/cect-liver-1", "/kaggle/input/datasets/noaanhldv1203/cect-liver-2"]
-    mask_dir="/kaggle/input/datasets/noaanhldv1203/cect-liver-2/mask_files/mask_files"
+    img_size = args.img_size
 
-    # unet, mamabunet
-    img_size = 256
-    # swimunet
-    # img_size = 224
-
-    # Train set
-    db_train = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="train",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
-        augment=True
-    )
-
-    # Validation set
-    db_val = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="val",
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
-        augment=False
-    )
-
-    # db_train = LiverTumorSliceDatasetPatient(
-    #     split_file=patient_csv_data,
-    #     split="train",                         
-    #     cect_root_dirs=cect_root_dirs,
-    #     mask_dir=mask_dir,
-    #     augment=True
-    # )
-
-    # db_val = LiverTumorSliceDatasetPatient(
-    #     split_file=patient_csv_data,
-    #     split="val",                         
-    #     cect_root_dirs=cect_root_dirs,
-    #     mask_dir=mask_dir,
-    #     augment=False
-    # )
-    # csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
-    # data_root = '/kaggle/input/cect-npy-full/npy_dataset'
-    # print("PROCESSING TRAIN SET...")
-    # db_train = LiverTumorPatientSliceDataset(csv_file, split="train", augment=True)
-    # db_train = NpyDataset(data_root, split='train', augment=True, output_size=(img_size, img_size))
-    # print(f"[TRAIN SET]   -  Total patients: {len(db_train.target_ids)}  -  Total slices: {len(db_train)}")
-    # print("PROCESSING VAL SET...")
-    # db_val   = LiverTumorPatientSliceDataset(csv_file, split="val", augment=False)
-    # db_val = NpyDataset(data_root, split='val', augment=False, output_size=(img_size, img_size))
-    # print(f"[VAL SET]   -  Total patients: {len(db_val.target_ids)}  -  Total slices: {len(db_val)}")
+    # Patient-level split: the split is encoded in the file names of the npy dataset,
+    # so all slices and phases of a patient belong to exactly one subset.
+    print("PROCESSING TRAIN SET...")
+    db_train = NpyDataset(args.data_root, split='train', augment=True,
+                          output_size=(img_size, img_size), vflip=bool(args.vflip))
+    print("PROCESSING VAL SET...")
+    db_val = NpyDataset(args.data_root, split='val', augment=False,
+                        output_size=(args.eval_size, args.eval_size))
+    for name, db in [('train', db_train), ('val', db_val)]:
+        pts = sorted({f.split('_')[1] for f in db.file_list})
+        logging.info("[%s] %d patients, %d slices", name.upper(), len(pts), len(db))
+    overlap = {f.split('_')[1] for f in db_train.file_list} & {f.split('_')[1] for f in db_val.file_list}
+    assert not overlap, "patients shared between train and val: %s" % sorted(overlap)
 
     def worker_init_fn(worker_id):
         random.seed(args.seed + worker_id)

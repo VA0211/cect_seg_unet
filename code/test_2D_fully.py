@@ -27,6 +27,18 @@ parser.add_argument('--num_classes', type=int,  default=4,
                     help='output channel of network')
 parser.add_argument('--labeled_num', type=int, default=140,
                     help='labeled data')
+parser.add_argument('--data_root', type=str, default='/kaggle/input/cect-npy-full/npy_dataset',
+                    help='patient-level npy dataset ({split}_{patient}_{phase}_{slice}.npy)')
+parser.add_argument('--img_size', type=int, default=256,
+                    help='network input size (224 for Swin-based models)')
+parser.add_argument('--eval_size', type=int, default=256,
+                    help='resolution at which test metrics are computed')
+parser.add_argument('--decoder_attn', type=str, default='none',
+                    help='unet3plus_resnet_attn only: none | se | cbam | mcbam')
+parser.add_argument('--aspp', type=int, default=0,
+                    help='unet3plus_resnet_attn only: 1 to apply ASPP at the bottleneck')
+parser.add_argument('--save_png', type=int, default=0,
+                    help='1 to save an overlay image for every test slice')
 # parser.add_argument('--model_weight_path', type=str,
 #                     default='', help='model_weight_path')
 
@@ -199,55 +211,22 @@ def test_single_volume(image, label, net, classes=2, patch_size=[256, 256]):
 #     return avg_metric
 
 def Inference(FLAGS):
+    img_size = FLAGS.img_size
 
-    csv_data = '/kaggle/input/datasets/noaanhldv1203/cect-liver-2/file_check.csv'
-    patient_csv_data = '/kaggle/input/cect-liver-2/patient_file_splits.csv'
-    cect_root_dirs = ["/kaggle/input/datasets/noaanhldv1203/cect-liver-1", "/kaggle/input/datasets/noaanhldv1203/cect-liver-2"]
-    mask_dir = "/kaggle/input/datasets/noaanhldv1203/cect-liver-2/mask_files/mask_files"
-
-    # unet, mamabunet
-    img_size = 256
-    # swimunet
-    # img_size = 224
-
-    db_test = LiverTumorSliceDataset(
-        metadata_csv=csv_data,
-        cect_root_dirs=cect_root_dirs,
-        mask_dir=mask_dir,
-        split="test",  # <--- use test split
-        val_ratio=0.2,
-        test_ratio=0.1,
-        random_seed=42,
-        output_size=(img_size, img_size),
-        augment=False
-    )
-
-    # db_test = LiverTumorSliceDatasetPatient(
-    #     split_file=patient_csv_data,
-    #     split="test",                         
-    #     cect_root_dirs=cect_root_dirs,
-    #     mask_dir=mask_dir,
-    #     augment=False
-    # )
-
-    # csv_file = '/kaggle/input/cect-liver-mask-files/patient_data_updated.csv'
-    # data_root = '/kaggle/input/cect-npy-full/npy_dataset'
-    # print("PROCESSING TEST SET...")
-    # db_test   = LiverTumorPatientSliceDataset(csv_file, split="test", augment=False)
-    # db_test = NpyDataset(data_root, split='test', augment=False, output_size=(img_size, img_size))
-    # print(f"[TEST SET]   -  Total patients: {len(db_test.target_ids)}  -  Total slices: {len(db_test)}")
-
+    # Patient-level test split; slices are kept in sorted file order (shuffle=False)
+    db_test = NpyDataset(FLAGS.data_root, split='test', augment=False,
+                         output_size=(FLAGS.eval_size, FLAGS.eval_size))
     test_loader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
+    files = db_test.file_list
+    print(f"[TEST] {len({f.split('_')[1] for f in files})} patients, {len(files)} slices")
 
     snapshot_path = f"{FLAGS.exp}_{FLAGS.labeled_num}/{FLAGS.model}"
     test_save_path = f"{snapshot_path}_predictions_plot/"
     os.makedirs(test_save_path, exist_ok=True)
 
-    net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes)
-    # if FLAGS.model_weight_path == '':
-    #     save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
-    # else:
-    #     save_mode_path = FLAGS.model_weight_path
+    attn = None if FLAGS.decoder_attn.lower() == 'none' else FLAGS.decoder_attn
+    net = net_factory(net_type=FLAGS.model, in_chns=1, class_num=FLAGS.num_classes,
+                      decoder_attn=attn, apply_aspp=bool(FLAGS.aspp))
     save_mode_path = os.path.join(snapshot_path, f'{FLAGS.model}_best_model.pth')
     print(save_mode_path)
     net.load_state_dict(torch.load(save_mode_path))
@@ -255,32 +234,39 @@ def Inference(FLAGS):
     print(f"Model loaded from: {save_mode_path}")
 
     all_metrics = []
+    empty_pred = []
     metric_names = ["Dice", "HD95", "IoU", "Accuracy", "Precision", "Sensitivity", "Specificity"]
 
-    # for i, (image, label) in enumerate(tqdm(test_loader)):
     for i, batch in enumerate(tqdm(test_loader)):
         image = batch["image"]
         label = batch["label"]
         pred, metric_i = test_single_volume(image, label, net, classes=FLAGS.num_classes, patch_size=[img_size, img_size])
         all_metrics.append(metric_i)
+        empty_pred.append(int((pred == 1).sum() == 0))
 
-        # Plot and save the result
-        img_np = image.squeeze().cpu().numpy()
-        label_np = label.squeeze().cpu().numpy()
-        save_file = os.path.join(test_save_path, f"pred_test_{i}.png")
-        save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
+        if FLAGS.save_png:
+            img_np = image.squeeze().cpu().numpy()
+            label_np = label.squeeze().cpu().numpy()
+            save_file = os.path.join(test_save_path, f"pred_test_{i}.png")
+            save_liver_and_tumor_masks(img_np, tumor_mask=label_np, pred_tumor_mask=pred, save_path=save_file)
 
     df = pd.DataFrame(all_metrics, columns=metric_names)
-    # df.insert(0, "Case", [f"sample_{i}" for i in range(len(df))])  # case ID
+    df.insert(0, "file", files)
+    df.insert(1, "patient_id", [f.split('_')[1] for f in files])
+    df.insert(2, "phase", [f.split('_')[2] for f in files])
+    df["empty_pred"] = empty_pred
+    # HD95 is undefined for empty predictions (stored as 999 by calculate_metric_percase)
+    df.loc[df["empty_pred"] == 1, "HD95"] = np.nan
 
-    # Save per-sample metrics
     csv_save_path = os.path.join(test_save_path, "test_results.csv")
     df.to_csv(csv_save_path, index=False)
     print(f"Saved test metrics to {csv_save_path}")
 
-    # Compute mean of each metric
     mean_metrics = df[metric_names].mean()
-    print("Mean Metrics:\n", mean_metrics)
+    print("Slice-level mean (HD95 over non-empty predictions):\n", mean_metrics)
+    print(f"Empty predictions: {int(df['empty_pred'].sum())} / {len(df)} ({100 * df['empty_pred'].mean():.1f}%)")
+    per_patient = df.groupby("patient_id")[metric_names].mean()
+    print("Patient-level mean:\n", per_patient.mean())
 
     return mean_metrics.to_dict()
 
