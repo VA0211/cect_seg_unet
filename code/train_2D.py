@@ -236,7 +236,8 @@ if __name__ == "__main__":
                     shutil.ignore_patterns(['.git', '__pycache__']))
 
     logging.basicConfig(filename=snapshot_path+"/log.txt", level=logging.INFO,
-                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S')
+                        format='[%(asctime)s.%(msecs)03d] %(message)s', datefmt='%H:%M:%S',
+                        force=True)  # an imported library may already have configured the root logger
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
     logging.info(str(args))
     train(args, snapshot_path)
