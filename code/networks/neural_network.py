@@ -18,7 +18,7 @@ import numpy as np
 from batchgenerators.augmentations.utils import pad_nd_image
 from torch import nn
 import torch
-from scipy.ndimage.filters import gaussian_filter
+from scipy.ndimage import gaussian_filter
 from typing import Union, Tuple, List
 
 

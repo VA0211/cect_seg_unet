@@ -5,8 +5,10 @@ import random
 import numpy as np
 from glob import glob
 from torch.utils.data import Dataset
-import h5py
-from scipy.ndimage.interpolation import zoom
+try:
+    import h5py  # only needed by the legacy ACDC/Synapse datasets
+except ImportError:
+    h5py = None
 from torchvision import transforms
 import itertools
 from scipy import ndimage

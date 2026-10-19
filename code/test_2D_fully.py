@@ -2,10 +2,8 @@ import argparse
 import os
 import shutil
 import pandas as pd
-import h5py
 import nibabel as nib
 import numpy as np
-import SimpleITK as sitk
 import torch
 from medpy import metric
 from scipy.ndimage import zoom

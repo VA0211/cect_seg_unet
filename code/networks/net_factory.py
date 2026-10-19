@@ -5,10 +5,20 @@ from networks.unet import UNet, UNet_DS, UNet_URPC, UNet_CCT
 from networks.unet3plus import Resnet50_Unet3plus, MambaUNet3plus, Transformer_UNet3plus, Resnet50_Unet3plus_attn
 import argparse
 from networks.vision_transformer import SwinUnet as ViT_seg
-from networks.vision_mamba import MambaUnet as VIM_seg
-from networks.sts_net  import STSNet
+try:
+    from networks.vision_mamba import MambaUnet as VIM_seg  # needs mamba_ssm / VMamba kernels
+except Exception as e:
+    VIM_seg = None
+    print('MambaUnet unavailable:', e)
+try:
+    from networks.sts_net import STSNet
+except Exception:
+    STSNet = None
 from networks.config import get_config
-from networks.nnunet import initialize_network
+try:
+    from networks.nnunet import initialize_network  # needs batchgenerators
+except Exception:
+    initialize_network = None
 
 
 parser = argparse.ArgumentParser()
