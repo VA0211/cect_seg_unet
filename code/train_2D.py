@@ -81,6 +81,12 @@ def train(args, snapshot_path):
     if args.model == "swinunet":
         from networks.net_factory import config as swin_config
         model.load_from(swin_config)  # ImageNet-pretrained Swin-T weights
+    if args.model == "mambaunet":
+        ckpt = model.vim_config.MODEL.PRETRAIN_CKPT
+        if ckpt and os.path.exists(ckpt):
+            model.load_from(model.vim_config)  # ImageNet-pretrained VMamba-T weights
+        else:
+            logging.warning("VMamba-T checkpoint not found (%s): MambaUnet is trained from scratch", ckpt)
 
     img_size = args.img_size
 

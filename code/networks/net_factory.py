@@ -110,9 +110,10 @@ def net_factory(net_type="unet", in_chns=1, class_num=4, decoder_attn=None, appl
         net = initialize_network(num_classes=class_num).cuda()
     elif net_type == "mambaunet":
         args.cfg = "../code/configs/vmamba_tiny.yaml"
-        config = get_config(args)
-        net = VIM_seg(config, img_size=args.patch_size,
+        vim_config = get_config(args)
+        net = VIM_seg(vim_config, img_size=args.patch_size,
                       num_classes=args.num_classes).cuda()
+        net.vim_config = vim_config  # used by train_2D.py to load the VMamba-T checkpoint
     elif net_type == "unet3plus_resnet":
         net = Resnet50_Unet3plus().cuda()
     elif net_type == "mamba_unet3plus":
