@@ -82,13 +82,18 @@ def calculate_metric_percase(pred, gt, num_classes=2):
             metrics["spec"].append(1.0)
             continue
         if pred_c.sum() == 0 or gt_c.sum() == 0:
+            # Overlap metrics are 0 and HD95 is undefined (999 marker); pixel-wise metrics follow from the
+            # confusion matrix (TP = 0) instead of being forced to 0; 0/0 ratios are undefined (NaN).
+            n, p_, g_ = pred_c.size, int(pred_c.sum()), int(gt_c.sum())
+            fp, fn = p_, g_
+            tn = n - fp - fn
             metrics["dice"].append(0.0)
             metrics["hd95"].append(999.0)
             metrics["iou"].append(0.0)
-            metrics["acc"].append(0.0)
-            metrics["prec"].append(0.0)
-            metrics["sens"].append(0.0)
-            metrics["spec"].append(0.0)
+            metrics["acc"].append(tn / n)
+            metrics["prec"].append(0.0 if p_ else np.nan)
+            metrics["sens"].append(0.0 if g_ else np.nan)
+            metrics["spec"].append(tn / (tn + fp))
             continue
 
         try:

@@ -18,7 +18,7 @@ METRICS = ["Dice", "IoU", "HD95", "Accuracy", "Precision", "Sensitivity", "Speci
 DIAGONAL = float(np.hypot(256, 256))  # HD95 assigned to empty predictions in the sensitivity analysis
 
 
-def load(path, test_dir=None):
+def load(path, test_dir=None, mask_dir=None):
     df = pd.read_csv(path)
     if "patient_id" not in df.columns:
         if not test_dir:
@@ -33,7 +33,24 @@ def load(path, test_dir=None):
         # old CSVs: empty prediction <=> HD95 stored as 999 (ground truth is never empty in the test set)
         df["empty_pred"] = (df["HD95"] >= 999).astype(int)
         df.loc[df["empty_pred"] == 1, "HD95"] = np.nan
+    if mask_dir:
+        df = fix_empty_metrics(df, mask_dir)
     df["HD95_sens"] = df["HD95"].fillna(DIAGONAL)
+    return df
+
+
+def fix_empty_metrics(df, mask_dir):
+    """Older test_2D_fully.py versions set Accuracy/Precision/Sensitivity/Specificity to 0 when the prediction
+    was empty. With TP = FP = 0 and FN = |G|: Accuracy = 1 - |G|/N, Specificity = 1, Sensitivity = 0 and
+    Precision is undefined (NaN)."""
+    rows = df.index[df["empty_pred"] == 1]
+    for i in rows:
+        g = np.load(os.path.join(mask_dir, df.at[i, "file"]))
+        n, g_sum = g.size, int((g > 0).sum())
+        df.at[i, "Accuracy"] = (n - g_sum) / n
+        df.at[i, "Specificity"] = 1.0
+        df.at[i, "Sensitivity"] = 0.0
+        df.at[i, "Precision"] = np.nan
     return df
 
 
@@ -66,6 +83,8 @@ def main():
     ap.add_argument("--csv", action="append", required=True, help="NAME=path/to/test_results.csv")
     ap.add_argument("--baseline", help="model name used as reference for paired tests")
     ap.add_argument("--test_dir", help="npy images folder, needed for CSVs without patient_id")
+    ap.add_argument("--mask_dir", help="npy masks folder: recompute pixel-wise metrics of empty predictions")
+    ap.add_argument("--slice_out", help="optional folder to write the corrected per-slice CSVs")
     ap.add_argument("--out", default="patient_level_summary.csv")
     args = ap.parse_args()
 
@@ -73,10 +92,14 @@ def main():
     rows = []
     for item in args.csv:
         name, path = item.split("=", 1)
-        df = load(path, args.test_dir)
+        df = load(path, args.test_dir, args.mask_dir)
+        if args.slice_out:
+            os.makedirs(args.slice_out, exist_ok=True)
+            df.to_csv(os.path.join(args.slice_out, f"test_results_{name}.csv"), index=False)
         p = per_patient(df)
         pp[name] = p
         row = {"model": name, "patients": len(p), "slices": len(df),
+               **{f"{m}_slice_mean": df[m].mean() for m in METRICS},
                "empty_pred_n": int(df["empty_pred"].sum()), "empty_pred_pct": 100 * df["empty_pred"].mean()}
         for m in METRICS + ["HD95_sens"]:
             vals = p[m].dropna()
